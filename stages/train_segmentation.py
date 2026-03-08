@@ -356,8 +356,8 @@ def _filter_s2_by_band_indices(s2_paths, band_indices, n_bands_per_file=N_BANDS_
     contribute at least one channel in band_indices, with indices remapped to
     their positions in the reduced stack.
 
-    Example: 25 files × 11 bands = 275 channels.  single_date selects bands [157..165]
-    (file 14 only) → returns [s2_paths[14]], remapped to [0..8].
+    Example: 25 files × 10 bands = 250 channels.  single_date selects bands [140..149]
+    (file 14 only) → returns [s2_paths[14]], remapped to [0..9].
     """
     if band_indices is None:
         return s2_paths, None
