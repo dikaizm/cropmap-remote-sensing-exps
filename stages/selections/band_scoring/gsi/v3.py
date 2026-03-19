@@ -107,7 +107,7 @@ def _compute_gsi(df: pd.DataFrame, bandnames: list[str]) -> dict[int, pd.Series]
         std_rest  = np.nanstd(x_rest, axis=0)
         # SI(j,k) = |mean_s - mean_o| / (1.96 * (std_s + std_o))  — Li et al. 2023 (rs15040875),
         # adapted from Somers & Asner 2013 (RSE 136:14-27).
-        si = np.abs(mean_crop - mean_rest) / (1.96 * (std_crop + std_rest) + 1e-9)
+        si = np.abs(mean_crop - mean_rest) / (1.96 * (std_crop + std_rest) + 1e-6)
         gsi_dict[crop_id] = pd.Series(si.astype(np.float32), index=bandnames)
 
     return gsi_dict
