@@ -58,7 +58,7 @@ def _gsi_per_crop(df: pd.DataFrame, bandnames: list[str]) -> dict[int, pd.Series
             continue
         # eq(1) for s vs every other crop o, then eq(2) average across o.
         si_pairs = [
-            np.abs(mu[s] - mu[o]) / (1.96 * (std[s] + std[o]) + 1e-9)
+            np.abs(mu[s] - mu[o]) / (1.96 * (std[s] + std[o]) + 1e-6)
             for o in valid if o != s
         ]
         gsi_s = np.mean(si_pairs, axis=0) if si_pairs else np.zeros(len(bandnames), dtype=np.float32)
