@@ -117,11 +117,12 @@ def _train_multiclass_rf(df: pd.DataFrame, bandnames: list[str],
     x = df[bandnames].values.astype(np.float32)
     y = df["class_label"].values.astype(int)
 
-    # Cap total pixels (None = no cap, use all sampled pixels)
+    # Cap total pixels to avoid OOM (None = no cap, use all sampled pixels)
     if RF_MAX_PIXELS is not None and len(y) > RF_MAX_PIXELS:
         rng = np.random.default_rng(seed)
-        idx = rng.choice(len(y), RF_MAX_PIXELS, replace=False)
+        idx = rng.choice(len(y), min(RF_MAX_PIXELS, len(y)), replace=False)
         x, y = x[idx], y[idx]
+        log.info(f"  Pixel cap applied: {len(y)} / {RF_MAX_PIXELS} pixels used")
 
     # Impute NaN with column median
     col_medians = np.nanmedian(x, axis=0)
