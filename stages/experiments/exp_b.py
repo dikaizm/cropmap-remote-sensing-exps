@@ -63,6 +63,7 @@ def _select_phenol_dates(local_date_to_idx, s2_paths=None, cdl_path=None, phenol
     ref_year = int(available_dates[0][:4])
 
     cache_path = Path(phenol_json) if phenol_json else (PROCESSED_DIR / "phenol_dates.json")
+    log.info(f"Phenol cache path: {cache_path}")
     if cache_path and cache_path.exists():
         try:
             with open(cache_path) as f:
