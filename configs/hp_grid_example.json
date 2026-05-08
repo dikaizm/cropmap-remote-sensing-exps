@@ -1,0 +1,293 @@
+{
+  "_comment": "Per-arch HP grid for train_segmentation.py --hp-grid. Tuned for LIGHT backbones: deeplabv3plus_cbam=mobilenet_v2, segformer=mit_b0. Top-level keys=arch names. Keys: lr, weight_decay, warmup_epochs, sched_power, scheduler(polynomial|cosine), optimizer(adamw|adam|sgd), momentum(sgd), grad_clip(0=off), batch_size. Each arch: 3 AdamW + 2 SGD bases x batch_size {4,8,16} = 15 runs/arch, 30 total. mobilenet_v2 SGD uses high lr (imagenet recipe ~0.045); mit_b0 AdamW with warmup+grad_clip.",
+  "deeplabv3plus_cbam": {
+    "combos": [
+      {
+        "optimizer": "adamw",
+        "lr": 0.0002,
+        "weight_decay": 0.0001,
+        "scheduler": "polynomial",
+        "warmup_epochs": 0,
+        "sched_power": 0.9,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0002,
+        "weight_decay": 0.0001,
+        "scheduler": "polynomial",
+        "warmup_epochs": 0,
+        "sched_power": 0.9,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0002,
+        "weight_decay": 0.0001,
+        "scheduler": "polynomial",
+        "warmup_epochs": 0,
+        "sched_power": 0.9,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.0001,
+        "scheduler": "polynomial",
+        "warmup_epochs": 0,
+        "sched_power": 0.9,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.0001,
+        "scheduler": "polynomial",
+        "warmup_epochs": 0,
+        "sched_power": 0.9,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.0001,
+        "scheduler": "polynomial",
+        "warmup_epochs": 0,
+        "sched_power": 0.9,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.0005,
+        "scheduler": "cosine",
+        "warmup_epochs": 3,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.0005,
+        "scheduler": "cosine",
+        "warmup_epochs": 3,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.0005,
+        "scheduler": "cosine",
+        "warmup_epochs": 3,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.03,
+        "weight_decay": 4e-05,
+        "momentum": 0.9,
+        "scheduler": "cosine",
+        "warmup_epochs": 3,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.03,
+        "weight_decay": 4e-05,
+        "momentum": 0.9,
+        "scheduler": "cosine",
+        "warmup_epochs": 3,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.03,
+        "weight_decay": 4e-05,
+        "momentum": 0.9,
+        "scheduler": "cosine",
+        "warmup_epochs": 3,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.01,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+        "scheduler": "polynomial",
+        "warmup_epochs": 0,
+        "sched_power": 0.9,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.01,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+        "scheduler": "polynomial",
+        "warmup_epochs": 0,
+        "sched_power": 0.9,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.01,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+        "scheduler": "polynomial",
+        "warmup_epochs": 0,
+        "sched_power": 0.9,
+        "batch_size": 16
+      }
+    ]
+  },
+  "segformer": {
+    "combos": [
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.05,
+        "scheduler": "polynomial",
+        "warmup_epochs": 5,
+        "sched_power": 1.0,
+        "grad_clip": 1.0,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.05,
+        "scheduler": "polynomial",
+        "warmup_epochs": 5,
+        "sched_power": 1.0,
+        "grad_clip": 1.0,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.05,
+        "scheduler": "polynomial",
+        "warmup_epochs": 5,
+        "sched_power": 1.0,
+        "grad_clip": 1.0,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.001,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+        "scheduler": "cosine",
+        "warmup_epochs": 10,
+        "grad_clip": 1.0,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.001,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+        "scheduler": "cosine",
+        "warmup_epochs": 10,
+        "grad_clip": 1.0,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.001,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+        "scheduler": "cosine",
+        "warmup_epochs": 10,
+        "grad_clip": 1.0,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.0005,
+        "weight_decay": 0.0005,
+        "momentum": 0.9,
+        "scheduler": "polynomial",
+        "warmup_epochs": 10,
+        "sched_power": 0.9,
+        "grad_clip": 1.0,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.0005,
+        "weight_decay": 0.0005,
+        "momentum": 0.9,
+        "scheduler": "polynomial",
+        "warmup_epochs": 10,
+        "sched_power": 0.9,
+        "grad_clip": 1.0,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.0005,
+        "weight_decay": 0.0005,
+        "momentum": 0.9,
+        "scheduler": "polynomial",
+        "warmup_epochs": 10,
+        "sched_power": 0.9,
+        "grad_clip": 1.0,
+        "batch_size": 16
+      }
+    ]
+  }
+}
