@@ -1,0 +1,29 @@
+{
+  "_comment": "Final chosen HP per arch (heavy backbones, v6.1-same-area-split) — best-val_mIoU winners from the mt_base sweep (exp 16). deeplabv3plus_cbam/resnet50: SGD lr5e-03 cosine wu3 bs8 (val 0.6498 / test 0.6660). segformer/mit_b2: AdamW lr6e-05 wd1e-2 cosine wu5 grad_clip1.0 bs8 (val 0.6787 / test 0.6893). Loss=dynamic_balanced, norm=percentile.",
+  "deeplabv3plus_cbam": {
+    "combos": [
+      {
+        "optimizer": "sgd",
+        "lr": 0.005,
+        "weight_decay": 0.0005,
+        "momentum": 0.9,
+        "scheduler": "cosine",
+        "warmup_epochs": 3,
+        "batch_size": 8
+      }
+    ]
+  },
+  "segformer": {
+    "combos": [
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 8
+      }
+    ]
+  }
+}
