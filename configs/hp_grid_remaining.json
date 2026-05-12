@@ -1,0 +1,168 @@
+{
+  "_comment": "mt_base remaining (light backbones) \u2014 FINISHED combos in MLflow exp16 removed (arch+encoder+hp_tag match). Run --exp mt_base.",
+  "deeplabv3plus_cbam": {
+    "combos": [
+      {
+        "optimizer": "sgd",
+        "lr": 0.01,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+        "scheduler": "polynomial",
+        "warmup_epochs": 0,
+        "sched_power": 0.9,
+        "batch_size": 16
+      }
+    ]
+  },
+  "segformer": {
+    "combos": [
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 0.0001,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.01,
+        "scheduler": "cosine",
+        "warmup_epochs": 5,
+        "grad_clip": 1.0,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.05,
+        "scheduler": "polynomial",
+        "warmup_epochs": 5,
+        "sched_power": 1.0,
+        "grad_clip": 1.0,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.05,
+        "scheduler": "polynomial",
+        "warmup_epochs": 5,
+        "sched_power": 1.0,
+        "grad_clip": 1.0,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "adamw",
+        "lr": 6e-05,
+        "weight_decay": 0.05,
+        "scheduler": "polynomial",
+        "warmup_epochs": 5,
+        "sched_power": 1.0,
+        "grad_clip": 1.0,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.001,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+        "scheduler": "cosine",
+        "warmup_epochs": 10,
+        "grad_clip": 1.0,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.001,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+        "scheduler": "cosine",
+        "warmup_epochs": 10,
+        "grad_clip": 1.0,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.001,
+        "weight_decay": 0.0001,
+        "momentum": 0.9,
+        "scheduler": "cosine",
+        "warmup_epochs": 10,
+        "grad_clip": 1.0,
+        "batch_size": 16
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.0005,
+        "weight_decay": 0.0005,
+        "momentum": 0.9,
+        "scheduler": "polynomial",
+        "warmup_epochs": 10,
+        "sched_power": 0.9,
+        "grad_clip": 1.0,
+        "batch_size": 4
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.0005,
+        "weight_decay": 0.0005,
+        "momentum": 0.9,
+        "scheduler": "polynomial",
+        "warmup_epochs": 10,
+        "sched_power": 0.9,
+        "grad_clip": 1.0,
+        "batch_size": 8
+      },
+      {
+        "optimizer": "sgd",
+        "lr": 0.0005,
+        "weight_decay": 0.0005,
+        "momentum": 0.9,
+        "scheduler": "polynomial",
+        "warmup_epochs": 10,
+        "sched_power": 0.9,
+        "grad_clip": 1.0,
+        "batch_size": 16
+      }
+    ]
+  }
+}
