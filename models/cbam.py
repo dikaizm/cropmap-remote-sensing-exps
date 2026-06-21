@@ -47,9 +47,9 @@ class CBAM(nn.Module):
     Applies channel attention followed by spatial attention.
 
     Args:
-        channels:      Number of input channels.
+        channels:      Number of input channels (must be divisible by reduction).
         reduction:     Channel reduction ratio for the MLP (default 16).
-        spatial_kernel: Kernel size for the spatial attention conv (default 7).
+        spatial_kernel: Kernel size for the spatial attention conv (must be odd, default 7).
     """
 
     def __init__(self, channels: int, reduction: int = 16, spatial_kernel: int = 7):
