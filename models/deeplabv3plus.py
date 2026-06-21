@@ -7,7 +7,7 @@ Usage:
     model = DeepLabV3PlusCBAM(
         encoder_name="resnet50",
         in_channels=27,       # e.g. 3 dates × 9 bands
-        num_classes=12,       # 11 crop classes + background
+        num_classes=9,        # 0=background + 1–8 crop classes (v6.1)
     )
 """
 import torch
