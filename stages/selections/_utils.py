@@ -37,8 +37,8 @@ def sample_pixels(s2_paths: list[str], cdl_path: str,
     """Sample crop pixels from S2 files without loading all files into RAM at once.
 
     Strategy: read CDL once → determine valid pixel indices → for each S2 file
-    read only the sampled rows. Peak RAM = 1 S2 file (11 bands × H × W × 4 bytes ≈ 1 GB)
-    instead of all 25 files stacked (≈ 28 GB).
+    read only the sampled rows. Peak RAM = 1 S2 file (10 bands × H × W × 4 bytes ≈ 1 GB)
+    instead of all 25 files stacked (≈ 25 GB).
     """
     # Read CDL once to get valid pixel indices and labels
     with rasterio.open(cdl_path) as src:
