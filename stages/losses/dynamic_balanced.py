@@ -78,7 +78,7 @@ class DynamicEffectiveClassBalancedLoss(nn.Module):
             else:                                      # majority (eq 14, bottom)
                 w[c]   = 1.0 - n_i / n_batch
 
-        w = w.clamp(min=1e-6)
+        w = w.clamp(min=1e-6)   # guard against zero weights causing NaN
         return F.cross_entropy(logits, target, weight=w,
                                ignore_index=self.ignore_index)
 
