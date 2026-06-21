@@ -507,6 +507,7 @@ def main(force: bool = False, data_dir: str = None, output_dir: str = None,
 
     configure_data_dir(data_dir)
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    log.info(f"Feature analysis — stage={stage}, selector={selector}")
 
     if stage in ("1", "all"):
         if not force and STAGE1V3_CANDIDATES_JSON.exists():
