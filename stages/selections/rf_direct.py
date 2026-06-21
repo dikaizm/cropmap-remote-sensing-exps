@@ -137,7 +137,8 @@ def _train_multiclass_rf(df: pd.DataFrame, bandnames: list[str],
     )
     rf.fit(x, y)
     log.info(f"  Multi-class RF trained — OOB accuracy: {rf.oob_score_:.3f}  "
-             f"classes: {list(rf.classes_)}  n_samples: {len(y)}")
+             f"classes: {list(rf.classes_)}  n_samples: {len(y)}  "
+             f"importance range: [{rf.feature_importances_.min():.4f}, {rf.feature_importances_.max():.4f}]")
     return rf
 
 
