@@ -120,7 +120,7 @@ def list_folder(folder_id: str, years: list = None) -> dict:
     Handles three layouts automatically:
       - Flat:            folder/S2H_*.tif
       - Year-subdir:     folder/2022/S2H_*.tif
-      - s2/year-subdir:  folder/s2/2022/S2H_*.tif  (GDrive processed layout)
+      - s2/year-subdir:  folder/s2/2022/S2H_*.tif  (GDrive processed layout v6)
     """
     service    = _build_drive_service()
     name_to_id = {}
