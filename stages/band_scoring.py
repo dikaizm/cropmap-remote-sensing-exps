@@ -114,6 +114,7 @@ def _glob_s2_train() -> list[str]:
 
 
 def build_band_name_to_idx(s2_files: list[str]) -> tuple[list[str], dict[str, int]]:
+    log.info(f"Building band name index from {len(s2_files)} S2 files")
     all_bandnames = []
     for s2_path in s2_files:
         fname = os.path.basename(s2_path)
