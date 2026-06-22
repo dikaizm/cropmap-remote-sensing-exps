@@ -93,7 +93,7 @@ def build_single_date_indices(local_date_to_idx, local_band_to_idx,
     off   = local_date_to_idx[best_date] * N_BANDS_PER_DATE
     idx   = [off + S2_BAND_NAMES.index(b) for b in S2_BAND_NAMES]
     names = [f"{b}_{best_date}" for b in S2_BAND_NAMES]
-    log.info(f"single_date: {len(idx)} channels (all {len(S2_BAND_NAMES)} bands, no selection)")
+    log.info(f"single_date: {len(idx)} channels (all {len(S2_BAND_NAMES)} bands, no selection) — date={best_date}")
     return idx, names, best_date
 
 
