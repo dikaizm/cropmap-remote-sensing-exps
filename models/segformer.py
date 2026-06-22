@@ -7,7 +7,7 @@ Usage:
     model = build_segformer(
         encoder_name="mit_b2",
         in_channels=27,
-        num_classes=12,
+        num_classes=9,   # 0=background + 1–8 crop classes (v6.1)
     )
 """
 import torch
