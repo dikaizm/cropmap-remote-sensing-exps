@@ -1,10 +1,10 @@
 """Experiment registry for Stage 3 training.
 
-Four experiments:
-  single_date — peak NDVI date, ALL bands (single-date baseline)
-  mt_base     — 4 calendar dates, ALL VEGE_BANDS (multi-temporal baseline, no selection)
-  gsi         — multi-temporal, GSI-direct top-K channels
-  rf          — multi-temporal, RF-importance top-K channels (multi-class MDI)
+Registered experiments (all optional — only built when band indices are provided):
+  single_date — peak NDVI date, all S2_BAND_NAMES (single-date baseline)
+  mt_base     — 4 phenological dates, all VEGE_BANDS (multi-temporal naive baseline)
+  gsi         — GSI-direct top-K channels per crop, union (spectral-temporal selection)
+  rf          — RF-direct top-K channels per crop, union (multi-class MDI selection)
 
 To add an experiment:
   1. Build its band indices in main() of train_segmentation.py
