@@ -9,7 +9,7 @@ computed and inspected independently of a training run.
 Patches are grouped into BLOCK_SIZE×BLOCK_SIZE px blocks by pixel origin (r, c); each
 block is assigned wholly to one split via class-balanced greedy stratification, so no
 train patch is ever spatially adjacent to a val/test patch within a block (kills
-patch-adjacency spatial leakage).
+patch-adjacency spatial leakage). Default BLOCK_SIZE=1024 px (~10.2 km at 10 m/px).
 
 CLI:
     python stages/spatial_split.py                       # uses config defaults
