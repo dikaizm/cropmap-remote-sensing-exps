@@ -82,6 +82,7 @@ class FocalTverskyLoss(nn.Module):
 
     def __init__(self, alpha=0.7, beta=0.3, gamma=0.75,
                  ignore_background=True, smooth=1e-6, class_weights=None):
+        # α=0.7, β=0.3 — recall-biased (FN penalised more than FP); γ=0.75 — mild focus
         super().__init__()
         self.alpha             = alpha
         self.beta              = beta
