@@ -2,11 +2,12 @@
 Pipeline orchestrator — runs all steps end-to-end.
 
 Steps:
-  process  — download raw S2 + CDL, process, upload to GDrive, delete raw
-  fetch    — download processed S2 + CDL from Google Drive
-  score    — band scoring: GSI + RF importance (band_scoring.py)
-  train    — train segmentation models for band selection comparison (train_segmentation.py)
-  all      — run fetch + score + train in order
+  process        — download raw S2 + CDL, process, upload to GDrive, delete raw
+  fetch          — download processed S2 + CDL from Google Drive (v6 layout)
+  fetch-processed— alias for fetch
+  score          — band scoring: GSI + RF importance (band_scoring.py)
+  train          — train segmentation models for band selection comparison (train_segmentation.py)
+  all            — run fetch + score + train in order
 
 Usage:
     python pipeline.py --stages process --years 2022 2023 2024 --shutdown
