@@ -120,6 +120,7 @@ def build_direct_indices(
 
     log.info(
         f"  {selector_name}: {len(idx_list)} channels loaded "
-        f"({skipped} skipped) from {json_path.name}"
+        f"({skipped} skipped) from {json_path.name} — "
+        f"unique dates: {len(set(n.rsplit('_',1)[-1] for n in name_list))}"
     )
     return idx_list, name_list
