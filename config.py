@@ -34,7 +34,7 @@ S2_NODATA        = -9999.0
 # criterion (>=50% non-unknown pixels). Excludes residual high-cloud/partial-capture
 # dates (e.g. 2024-01-31 = 14.8% valid, 2024-12-11 = 4.8%) from selection + training.
 S2_MIN_VALID_FRAC = 0.50
-# 9 vegetation bands — legacy, kept for GSI/RF feature analysis (excludes B8A)
+# 9 vegetation bands — legacy alias for GSI/RF feature analysis (S2_BAND_NAMES minus B8A)
 VEGE_BANDS       = ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "B11", "B12"]
 
 # ── CDL classes ────────────────────────────────────────────────────────────────
