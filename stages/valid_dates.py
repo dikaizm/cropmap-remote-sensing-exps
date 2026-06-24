@@ -76,6 +76,7 @@ def filter_valid_s2_dates(s2_paths, min_valid_frac: float = S2_MIN_VALID_FRAC,
 
     valid   = [p for p in s2_paths if fracs.get(Path(p).name, 0.0) >= min_valid_frac]
     dropped = sorted([(n, f) for n, f in fracs.items() if f < min_valid_frac])
+    log.info(f"filter_valid_s2_dates: {len(valid)} valid / {len(s2_paths)} total (threshold={min_valid_frac:.0%})")
     if dropped:
         log.warning(f"Excluding {len(dropped)} date(s) below {min_valid_frac*100:.0f}% valid pixels:")
         for n, f in dropped:
