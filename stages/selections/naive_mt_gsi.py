@@ -25,7 +25,7 @@ def run_naive_mt_gsi(
     phenol_files = [s2_paths[date_to_idx[d]] for d in phenol_map.values()]
     out_json     = Path(s2_paths[0]).parent / "gsi_naive_mt_candidates.json"
 
-    log.info(f"naive_mt_gsi: phenol_map={phenol_map}")
+    log.info(f"naive_mt_gsi: phenol_map={phenol_map}, {len(phenol_files)} date(s) to score")
     band_candidates = compute_band_candidates(phenol_files, cdl_path, out_json=out_json, force=force)
-    log.info(f"naive_mt_gsi: saved → {out_json}")
+    log.info(f"naive_mt_gsi: {len(band_candidates)} crops scored, saved → {out_json}")
     return band_candidates, phenol_map
