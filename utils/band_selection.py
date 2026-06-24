@@ -83,7 +83,8 @@ def calculate_gsi(data: pd.DataFrame, class_col: str) -> pd.DataFrame:
             mean_o = class_o[bands].mean()
             std_o = class_o[bands].std()
 
-            si = abs(mean_s - mean_o) / (1.96 * (std_s + std_o))
+            # GSI formula: |μ_s - μ_o| / (1.96*(σ_s + σ_o) + 1e-6)
+            si = abs(mean_s - mean_o) / (1.96 * (std_s + std_o) + 1e-6)
             si_values.append(si)
 
         gsi = pd.concat(si_values, axis=1).mean(axis=1)
