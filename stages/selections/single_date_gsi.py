@@ -27,5 +27,6 @@ def run_single_date_gsi(
 
     log.info(f"single_date_gsi: peak_date={peak_date}, scoring {Path(peak_file).name}")
     band_candidates = compute_band_candidates([peak_file], cdl_path, out_json=out_json, force=force)
-    log.info(f"single_date_gsi: saved → {out_json}")
+    n_crops = len(band_candidates)
+    log.info(f"single_date_gsi: {n_crops} crops scored, saved → {out_json}")
     return band_candidates, peak_date
