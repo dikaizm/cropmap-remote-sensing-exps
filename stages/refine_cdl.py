@@ -87,6 +87,7 @@ def main():
         out_path = in_path.with_stem(in_path.stem + suffix)
 
     print(f"Input  : {in_path}")
+    print(f"Options: erode={args.erode}, erode_iter={args.erode_iter}, min_size={args.min_size}, kernel={args.kernel}")
     print(f"Output : {out_path}")
 
     current = in_path
