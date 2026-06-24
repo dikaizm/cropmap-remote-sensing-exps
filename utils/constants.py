@@ -1,5 +1,5 @@
 # CDL class IDs that are NOT crops (non-agricultural land cover).
-# Everything not in this set (and not 0/background) is treated as a potential crop class.
+# Everything not in this set and not in KEEP_CLASSES is collapsed to background (class 0).
 CDL_NON_CROP_IDS: frozenset = frozenset({
     0,              # Background / NoData
     61,             # Fallow/Idle Cropland  → remapped to background (class 0)
