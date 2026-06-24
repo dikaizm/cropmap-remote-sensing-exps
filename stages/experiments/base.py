@@ -14,6 +14,11 @@ log = logging.getLogger(__name__)
 
 
 def parse_date(path):
+    """Extract YYYYMMDD date string from a processed S2 filename.
+
+    Expected pattern: S2H_YYYY_MM_DD[_processed].tif → 'YYYYMMDD'.
+    Returns None if the filename does not match.
+    """
     m = re.search(r"_(\d{4}_\d{2}_\d{2})(_processed)?\.tif$", Path(path).name)
     if not m:
         return None
