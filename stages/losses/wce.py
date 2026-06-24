@@ -13,6 +13,7 @@ def build_wce(class_weights_tensor):
     Args:
         class_weights_tensor: 1-D float tensor of shape (NUM_CLASSES,) on CPU.
             Will be moved to the correct device by the caller before training.
+            Weights are inverse-frequency derived from training-set pixel counts.
 
     Returns:
         nn.CrossEntropyLoss instance.
