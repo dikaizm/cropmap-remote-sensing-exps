@@ -35,6 +35,7 @@ B4_IDX = S2_BAND_NAMES.index("B4")
 B8_IDX = S2_BAND_NAMES.index("B8")
 
 # CalCROP21 Sec 5.2/8.1: minimum agreement pixels to trust a class's characteristic series.
+# Too few → the mean NDVI series is noisy; class is skipped in the disagreement resolution.
 MIN_AGREEMENT_PIXELS = 100
 
 
