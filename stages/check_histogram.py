@@ -30,7 +30,7 @@ from crop_mapping_pipeline.config import (
     SPATIAL_TEST_AREAS,
 )
 
-SHIFT_WARN_MEAN = 0.15   # >15% relative mean shift → warn
+SHIFT_WARN_MEAN = 0.15   # >15% relative mean shift → warn (histogram matching likely needed)
 SHIFT_WARN_STD  = 0.20   # >20% relative std shift  → warn
 
 
