@@ -1,37 +1,23 @@
 """
-Stage 0.5b (v6) — Process single-file-per-date GEE S2 exports + resolution-aware CDL.
+Stage 0.5b (v5) — Process single-file-per-date GEE S2 exports.
 
-S2 handling identical to v5. CDL handling now branches on native resolution:
-  - 2022 / 2023: only 30m CDL exists → reproject (nearest) to S2 grid, filter
-    classes, confidence mask (pixels < 85% → unknown=255), then majority filter
-    (k=3) + boundary erosion/small-component removal (CalCROP21-style) to clean
-    up 30m→10m resampling artifacts.
-  - 2024 (and any future year in CDL_DOWNLOAD_URLS_10M): USDA now publishes a
-    NATIVE 10m CDL (random forest, Sentinel-2+Landsat fusion, GEE-based — see
-    Li et al. IGARSS 2024 / TGRS 2024 / Scientific Data 2026). This raster has
-    no resampling artifacts to clean, so it only gets reprojected (nearest, to
-    snap onto the exact S2 pixel grid) + class-filtered + confidence masked —
-    no majority filter, no erosion. This is the label used for the 2024 test split.
-
-CDL confidence masking (Maleki et al. 2024, Agriculture 14:1285):
-  30m CDL zips ship a companion confidence raster (uint8, 0–100%). Pixels below
-  --conf-threshold (default 55, per Maleki et al. 2024 best result) are set to
-  unknown_value (255) so the model never trains on low-confidence labels.
-  NOTE: NASS discontinued downloadable confidence layers for the native 10m CDL
-  (file too large) — confidence masking is automatically skipped for 2024+.
-  Use --no-conf-mask to disable for 30m years too.
+Unlike v2, GEE exports one file per date (no tile splitting), so no merge step.
+Pipeline per date:
+    raw S2H_{year}_{YYYY_MM_DD}.tif
+        → assign NoData (-9999, float32)
+        → DEFLATE+predictor=3 compression
+        → overviews/pyramids
+        → upload to processed_v3/s2/{year}/
+        → delete raw
 
 Checks processed_v3 on GDrive before downloading raw files — only downloads
 and processes dates that are missing from processed_v3.
 
-Processed CDL outputs are uploaded to GDRIVE_PROCESSED_CDL_FOLDER_ID_V6.
-
 Usage:
-    python stages/process_data_v6.py --years 2022 2023
-    python stages/process_data_v6.py --years 2024              # uses native 10m CDL
-    python stages/process_data_v6.py --years 2022 --skip-upload
-    python stages/process_data_v6.py --years 2022 --no-erode    # skip boundary cleanup
-    python stages/process_data_v6.py --auth
+    python stages/process_data_v5.py --years 2022 2023
+    python stages/process_data_v5.py --years 2022 --skip-upload
+    python stages/process_data_v5.py --years 2022 --overwrite
+    python stages/process_data_v5.py --auth
 """
 
 import os
@@ -62,9 +48,7 @@ from crop_mapping_pipeline.config import (
     GDRIVE_OAUTH_TOKEN,
 )
 from crop_mapping_pipeline.utils.constants import USDA_CDL_NAMES
-from crop_mapping_pipeline.utils.label import (
-    label_filtering, majority_filter_labels, erode_and_clean_labels,
-)
+from crop_mapping_pipeline.utils.label import label_filtering, majority_filter_labels
 
 log = logging.getLogger(__name__)
 
@@ -171,84 +155,14 @@ def assign_nodata(in_path: str, out_path: str, overwrite: bool = False) -> str:
 
 # ── CDL processing ───────────────────────────────────────────────────────────────
 
-def _reproject_raster_to_s2(src_path: str, s2_ref_path: str, out_path: str,
-                             overwrite: bool = False) -> None:
-    """Reproject any single-band raster to match the S2 grid (nearest, uint8)."""
-    if Path(out_path).exists() and not overwrite:
-        return
-    with rasterio.open(s2_ref_path) as s2_ref:
-        crs, transform = s2_ref.crs, s2_ref.transform
-        width, height  = s2_ref.width, s2_ref.height
-    with rasterio.open(src_path) as src:
-        dst_data = np.zeros((1, height, width), dtype=np.uint8)
-        reproject(
-            source        = rasterio.band(src, 1),
-            destination   = dst_data,
-            src_transform = src.transform,
-            src_crs       = src.crs,
-            dst_transform = transform,
-            dst_crs       = crs,
-            resampling    = Resampling.nearest,
-        )
-    profile = {
-        "driver": "GTiff", "dtype": "uint8", "nodata": None,
-        "width": width, "height": height, "count": 1,
-        "crs": crs, "transform": transform, "compress": "lzw",
-    }
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    with rasterio.open(out_path, "w", **profile) as dst:
-        dst.write(dst_data)
-
-
-def _apply_confidence_mask(labels_path: str, conf_reproj_path: str,
-                           out_path: str, threshold: int,
-                           unknown_value: int = 255) -> None:
-    """Set label pixels with confidence < threshold to unknown_value.
-
-    Maleki et al. (2024, Agriculture 14:1285) — confidence thresholding improves
-    CDL label quality for deep-learning crop segmentation; best result at 55%.
-    """
-    with rasterio.open(labels_path) as src:
-        labels  = src.read(1)
-        profile = src.profile.copy()
-    with rasterio.open(conf_reproj_path) as csrc:
-        conf = csrc.read(1).astype(np.uint8)
-    labels[conf < threshold] = unknown_value
-    with rasterio.open(out_path, "w", **profile) as dst:
-        dst.write(labels, 1)
-    masked_px = int((conf < threshold).sum())
-    log.info("  Confidence mask (<=%d%%): %s px → unknown(%d)", threshold - 1, f"{masked_px:,}", unknown_value)
-
-
 def process_cdl(cdl_raw_path: str, s2_ref_path: str,
                 out_reprojected: str, out_filtered: str,
                 overwrite: bool = False,
-                native_10m: bool = False,
-                majority_kernel: int = 3,
-                erode: bool = True,
-                erode_iter: int = 1,
-                min_size: int = 4,
-                unknown_value: int = 255,
-                conf_raw_path: str | None = None,
-                conf_threshold: int = 55) -> None:
-    """Reproject + filter CDL onto the S2 grid.
-
-    native_10m=True (USDA's native 10m product, no 30m resampling artifacts):
-        reproject (nearest, grid-snap only) → filter classes → confidence mask.
-        No majority filter, no erosion — there's no resampling noise to clean.
-    native_10m=False (legacy 30m CDL upsampled to 10m):
-        reproject (nearest, 30m→10m) → filter classes → confidence mask →
-        majority filter (k=majority_kernel) → optional boundary erosion +
-        small-component removal (CalCROP21-style) if erode=True.
-
-    conf_raw_path: path to CDL companion confidence raster (0-100 uint8).
-        If provided, pixels with confidence < conf_threshold are set to
-        unknown_value (255) — ignored during training (CalCROP21, Ghosh et al. 2021).
-    """
+                majority_kernel: int = 3) -> None:
     if Path(out_reprojected).exists() and not overwrite:
         log.info("  CDL reprojected already exists: %s", Path(out_reprojected).name)
     else:
-        log.info("  Reprojecting CDL (native_10m=%s) → %s", native_10m, Path(out_reprojected).name)
+        log.info("  Reprojecting CDL → %s", Path(out_reprojected).name)
         with rasterio.open(s2_ref_path) as s2_ref:
             target_crs, target_transform = s2_ref.crs, s2_ref.transform
             target_width, target_height  = s2_ref.width, s2_ref.height
@@ -277,59 +191,21 @@ def process_cdl(cdl_raw_path: str, s2_ref_path: str,
 
     if Path(out_filtered).exists() and not overwrite:
         log.info("  CDL filtered already exists: %s", Path(out_filtered).name)
-        return
-
-    log.info("  Filtering CDL → %d classes", len(KEEP_CLASSES))
-    _tmp_filtered = str(out_filtered) + ".tmp.tif"
-    label_filtering(
-        in_path      = out_reprojected,
-        out_path     = _tmp_filtered,
-        keep_classes = KEEP_CLASSES,
-    )
-    current = _tmp_filtered
-
-    # Confidence masking (CalCROP21-style) — applied before majority filter so
-    # uncertain pixels don't contaminate neighbourhood voting.
-    if conf_raw_path and Path(conf_raw_path).exists():
-        conf_reproj = str(out_reprojected).replace(".tif", "_confidence.tif")
-        log.info("  Reprojecting confidence layer → %s", Path(conf_reproj).name)
-        _reproject_raster_to_s2(conf_raw_path, s2_ref_path, conf_reproj, overwrite=overwrite)
-        _tmp_conf = str(out_filtered) + ".conf.tmp.tif"
-        _apply_confidence_mask(current, conf_reproj, _tmp_conf,
-                               threshold=conf_threshold, unknown_value=unknown_value)
-        Path(current).unlink(missing_ok=True)
-        current = _tmp_conf
     else:
-        if conf_raw_path:
-            log.warning("  Confidence layer not found at %s — skipping confidence mask", conf_raw_path)
-        else:
-            log.info("  No confidence layer provided — skipping confidence mask")
-
-    if native_10m:
-        # Native 10m classification — no resampling artifacts to clean.
-        Path(current).rename(out_filtered)
-        log.info("  CDL filtered (native 10m, no erosion cleanup): %s", Path(out_filtered).name)
-        return
-
-    if majority_kernel and majority_kernel > 1:
-        _tmp_mf = str(out_filtered) + ".mf.tmp.tif"
-        log.info("  Applying majority filter (k=%d) to CDL labels", majority_kernel)
-        majority_filter_labels(current, _tmp_mf, kernel_size=majority_kernel)
-        Path(current).unlink(missing_ok=True)
-        current = _tmp_mf
-
-    if erode:
-        log.info("  Eroding boundaries (%dpx) + dropping components <%dpx → unknown(%d)",
-                 erode_iter, min_size, unknown_value)
-        erode_and_clean_labels(
-            current, out_filtered,
-            erosion_iter=erode_iter, min_size=min_size, unknown_value=unknown_value,
+        log.info("  Filtering CDL → %d classes", len(KEEP_CLASSES))
+        _tmp_filtered = str(out_filtered) + ".tmp.tif"
+        label_filtering(
+            in_path      = out_reprojected,
+            out_path     = _tmp_filtered,
+            keep_classes = KEEP_CLASSES,
         )
-        Path(current).unlink(missing_ok=True)
-    else:
-        Path(current).rename(out_filtered)
-
-    log.info("  CDL filtered: %s", Path(out_filtered).name)
+        if majority_kernel and majority_kernel > 1:
+            log.info("  Applying majority filter (k=%d) to CDL labels", majority_kernel)
+            majority_filter_labels(_tmp_filtered, out_filtered, kernel_size=majority_kernel)
+            Path(_tmp_filtered).unlink(missing_ok=True)
+        else:
+            Path(_tmp_filtered).rename(out_filtered)
+        log.info("  CDL filtered: %s", Path(out_filtered).name)
 
 
 # ── Google Drive ─────────────────────────────────────────────────────────────────
@@ -612,13 +488,6 @@ def main(
     upload_workers  : int  = 1,
     download_workers: int  = 2,
     cdl_only        : bool = False,
-    majority_kernel : int  = 3,
-    erode           : bool = True,
-    erode_iter      : int  = 1,
-    min_size        : int  = 4,
-    unknown_value   : int  = 255,
-    conf_threshold  : int  = 55,
-    no_conf_mask    : bool = False,
 ) -> None:
     global S2_PROCESSED_DIR, CDL_BY_YEAR, PROCESSED_DIR
 
@@ -635,7 +504,6 @@ def main(
 
     from crop_mapping_pipeline.config import (
         GDRIVE_PROCESSED_V5_FOLDER_ID, GDRIVE_PROCESSED_CDL_FOLDER_ID,
-        GDRIVE_PROCESSED_CDL_FOLDER_ID_V6, CDL_DOWNLOAD_URLS_10M,
         GDRIVE_RAW_S2_V5_FOLDER_ID as GDRIVE_RAW_S2_V2_FOLDER_ID,
     )
 
@@ -654,19 +522,10 @@ def main(
         _v3     = GDRIVE_PROCESSED_V5_FOLDER_ID
 
         # ── CDL-only mode: skip all S2 steps, use existing processed S2 as grid ref ──
-        # S2_PROCESSED_DIR is flat (organised by role, not year) — try year subdir
-        # first for back-compat, then fall back to flat dir filtered by year.
         if cdl_only:
             existing = sorted((S2_PROCESSED_DIR / yr).glob("*_processed.tif"))
             if not existing:
-                existing = sorted((S2_PROCESSED_DIR / yr).glob("*.tif"))
-            if not existing:
-                existing = sorted(S2_PROCESSED_DIR.glob(f"S2H_{yr}_*.tif"))
-            if not existing:
-                existing = sorted(S2_PROCESSED_DIR.glob(f"*{yr}*.tif"))
-            if not existing:
-                log.error("  --cdl-only: no S2 tif for year %s under %s — cannot determine grid",
-                          yr, S2_PROCESSED_DIR)
+                log.error("  --cdl-only: no processed S2 in %s — cannot determine grid", S2_PROCESSED_DIR / yr)
                 continue
             s2_ref_path = str(existing[0])
             log.info("  --cdl-only: grid ref = %s", pathlib.Path(s2_ref_path).name)
@@ -744,127 +603,61 @@ def main(
 
         # ── CDL processing ────────────────────────────────────────────────────
         from glob import glob as _glob
-        from crop_mapping_pipeline.config import GDRIVE_RAW_CDL_FOLDER_ID, CDL_DOWNLOAD_URLS
+        from crop_mapping_pipeline.config import GDRIVE_RAW_CDL_FOLDER_ID
         cdl_dir = (pathlib.Path(raw_cdl_dir) if raw_cdl_dir
                    else _ROOT / "data" / "raw" / "cdl")
-
-        native_10m = yr in CDL_DOWNLOAD_URLS_10M
-        res_tag    = "10m" if native_10m else "30m"
-        cdl_subdir = cdl_dir / f"{yr}_{res_tag}_cdls"
+        cdl_subdir = cdl_dir / f"{yr}_30m_cdls"
         cdl_raw = next((_glob(str(cdl_subdir / "*.tif")).__iter__()), None)
-        if native_10m:
-            log.info("  Year %s: using native 10m CDL (no resampling cleanup needed)", yr)
 
-        # Use a local zip if present (e.g. manually downloaded) — skip the network fetch.
-        # Else auto-download from USDA NASS, stream-extract to avoid storing zip on disk.
+        # Auto-download CDL from USDA NASS — stream-extract to avoid storing zip on disk
         if not cdl_raw:
-            import zipfile, shutil
-            local_zip = cdl_dir / f"{yr}_{res_tag}_cdls.zip"
-            cdl_subdir.mkdir(parents=True, exist_ok=True)
-            tif_dest = cdl_subdir / f"{yr}_{res_tag}_cdls.tif"
-
-            if local_zip.exists():
-                log.info("  Found local zip: %s — extracting (no download)", local_zip)
+            from crop_mapping_pipeline.config import CDL_DOWNLOAD_URLS
+            url = CDL_DOWNLOAD_URLS.get(yr)
+            if url:
+                log.info("  Raw CDL for %s not found — stream-downloading from USDA NASS...", yr)
                 try:
+                    import urllib.request, zipfile, io
+                    cdl_subdir.mkdir(parents=True, exist_ok=True)
+                    tif_dest = cdl_subdir / f"{yr}_30m_cdls.tif"
                     if not tif_dest.exists():
-                        with zipfile.ZipFile(local_zip) as zf:
+                        log.info("  Streaming %s (no temp zip — direct extract)...", url)
+                        with urllib.request.urlopen(url) as resp:
+                            total = int(resp.headers.get("Content-Length", 0))
+                            buf = io.BytesIO()
+                            downloaded = 0
+                            chunk = 8 * 1024 * 1024  # 8 MB chunks
+                            while True:
+                                data = resp.read(chunk)
+                                if not data:
+                                    break
+                                buf.write(data)
+                                downloaded += len(data)
+                                if total:
+                                    log.info("    CDL buffer: %d%%",
+                                             downloaded * 100 // total)
+                        log.info("  Extracting from buffer (%.0f MB)...",
+                                 buf.tell() / 1e6)
+                        buf.seek(0)
+                        with zipfile.ZipFile(buf) as zf:
                             tif_members = [m for m in zf.namelist()
-                                           if m.endswith(".tif") and "confidence" not in m.lower()]
+                                           if m.endswith(".tif")]
                             if not tif_members:
-                                raise RuntimeError(f"No CDL TIF in {local_zip}")
+                                raise RuntimeError("No TIF in ZIP")
                             for member in tif_members:
-                                log.info("  Extracting CDL: %s", member)
-                                with zf.open(member) as src, open(tif_dest, "wb") as dst:
+                                log.info("  Extracting: %s", member)
+                                src = zf.open(member)
+                                with open(tif_dest, "wb") as dst:
+                                    import shutil
                                     shutil.copyfileobj(src, dst)
-                            # Extract companion confidence raster
-                            conf_members = [m for m in zf.namelist()
-                                            if "confidence" in m.lower()
-                                            and m.endswith((".tif", ".img"))]
-                            if conf_members:
-                                conf_ext  = Path(conf_members[0]).suffix
-                                conf_dest = cdl_subdir / f"{yr}_{res_tag}_cdls_confidence{conf_ext}"
-                                if not conf_dest.exists():
-                                    log.info("  Extracting confidence: %s", conf_members[0])
-                                    with zf.open(conf_members[0]) as src, open(conf_dest, "wb") as dst:
-                                        shutil.copyfileobj(src, dst)
-                            else:
-                                log.warning("  No confidence layer found in zip")
-                        log.info("  CDL extracted: %.0f MB", tif_dest.stat().st_size / 1e6)
+                        log.info("  CDL extracted: %.0f MB",
+                                 tif_dest.stat().st_size / 1e6)
                     else:
                         log.info("  CDL TIF already present: %s", tif_dest.name)
                     cdl_raw = str(tif_dest) if tif_dest.exists() else None
                 except Exception as exc:
-                    log.error("  Local zip extract failed: %s", exc)
+                    log.error("  CDL download/extract failed: %s", exc)
             else:
-                url = CDL_DOWNLOAD_URLS_10M.get(yr) or CDL_DOWNLOAD_URLS.get(yr)
-                if url:
-                    log.info("  Raw CDL for %s not found — stream-downloading from USDA NASS...", yr)
-                    try:
-                        import urllib.request, io
-                        if not tif_dest.exists():
-                            log.info("  Streaming %s (no temp zip — direct extract)...", url)
-                            with urllib.request.urlopen(url) as resp:
-                                total = int(resp.headers.get("Content-Length", 0))
-                                buf = io.BytesIO()
-                                downloaded = 0
-                                chunk = 8 * 1024 * 1024  # 8 MB chunks
-                                while True:
-                                    data = resp.read(chunk)
-                                    if not data:
-                                        break
-                                    buf.write(data)
-                                    downloaded += len(data)
-                                    if total:
-                                        log.info("    CDL buffer: %d%%",
-                                                 downloaded * 100 // total)
-                            log.info("  Extracting from buffer (%.0f MB)...",
-                                     buf.tell() / 1e6)
-                            buf.seek(0)
-                            with zipfile.ZipFile(buf) as zf:
-                                tif_members = [m for m in zf.namelist()
-                                               if m.endswith(".tif") and "confidence" not in m.lower()]
-                                if not tif_members:
-                                    raise RuntimeError("No CDL TIF in ZIP")
-                                for member in tif_members:
-                                    log.info("  Extracting CDL: %s", member)
-                                    with zf.open(member) as src, open(tif_dest, "wb") as dst:
-                                        shutil.copyfileobj(src, dst)
-                                # Extract confidence raster
-                                conf_members = [m for m in zf.namelist()
-                                                if "confidence" in m.lower()
-                                                and m.endswith((".tif", ".img"))]
-                                if conf_members:
-                                    conf_ext  = Path(conf_members[0]).suffix
-                                    conf_dest = cdl_subdir / f"{yr}_{res_tag}_cdls_confidence{conf_ext}"
-                                    if not conf_dest.exists():
-                                        log.info("  Extracting confidence: %s", conf_members[0])
-                                        with zf.open(conf_members[0]) as src, open(conf_dest, "wb") as dst:
-                                            shutil.copyfileobj(src, dst)
-                                else:
-                                    log.warning("  No confidence layer found in ZIP")
-                            log.info("  CDL extracted: %.0f MB",
-                                     tif_dest.stat().st_size / 1e6)
-                        else:
-                            log.info("  CDL TIF already present: %s", tif_dest.name)
-                        cdl_raw = str(tif_dest) if tif_dest.exists() else None
-                    except Exception as exc:
-                        log.error("  CDL download/extract failed: %s", exc)
-                else:
-                    log.warning("  No download URL configured for CDL year %s", yr)
-
-        # Detect companion confidence raster (extracted from zip earlier).
-        # NASS discontinued downloadable confidence layers for native 10m CDL
-        # (too large) — skip silently for those years.
-        cdl_conf_raw = None
-        if native_10m:
-            log.info("  Native 10m CDL: confidence layer not available from NASS — skipping confidence mask")
-        elif not no_conf_mask:
-            conf_candidates = sorted(cdl_subdir.glob("*confidence*")) if cdl_subdir.exists() else []
-            if conf_candidates:
-                cdl_conf_raw = str(conf_candidates[0])
-                log.info("  Confidence layer: %s", conf_candidates[0].name)
-            else:
-                log.info("  No confidence layer found in %s — confidence masking disabled", cdl_subdir)
+                log.warning("  No download URL configured for CDL year %s", yr)
 
         cdl_filtered = None
         cdl_reprojected = None
@@ -873,21 +666,21 @@ def main(
         elif s2_ref_path is None:
             log.warning("  No processed S2 reference — skipping CDL processing")
         else:
-            cdl_out_dir     = PROCESSED_DIR / "cdl"
+            cdl_out_dir     = S2_PROCESSED_DIR.parent / "cdl"
             cdl_reprojected = str(cdl_out_dir / f"cdl_{yr}_study_area.tif")
             cdl_filtered    = str(cdl_out_dir / f"cdl_{yr}_study_area_filtered.tif")
             process_cdl(cdl_raw, s2_ref_path, cdl_reprojected, cdl_filtered,
-                        overwrite=overwrite, native_10m=native_10m,
-                        majority_kernel=majority_kernel, erode=erode,
-                        erode_iter=erode_iter, min_size=min_size,
-                        unknown_value=unknown_value,
-                        conf_raw_path=cdl_conf_raw,
-                        conf_threshold=conf_threshold)
-            log.info("  Raw CDL TIF retained: %s", pathlib.Path(cdl_raw).name)
+                        overwrite=overwrite)
+            # Delete raw CDL after processing — full CONUS TIF is large (~8 GB)
+            if not skip_delete and pathlib.Path(cdl_raw).exists():
+                freed = pathlib.Path(cdl_raw).stat().st_size
+                pathlib.Path(cdl_raw).unlink()
+                log.info("  Deleted raw CDL TIF (freed %.1f GB)", freed / 1e9)
 
-        if not skip_upload:
+        if not skip_upload and _s2_ids:
             service    = _build_drive_service()
-            cdl_folder = cdl_folder_id or GDRIVE_PROCESSED_CDL_FOLDER_ID_V6
+            v3_parent  = next(iter(_s2_ids.values()))
+            cdl_folder = get_or_create_subfolder(v3_parent, "cdl", service)
             if cdl_reprojected and pathlib.Path(cdl_reprojected).exists():
                 upload_file(cdl_reprojected, cdl_folder, service, overwrite=overwrite)
             if cdl_filtered and pathlib.Path(cdl_filtered).exists():
@@ -934,17 +727,6 @@ if __name__ == "__main__":
     parser.add_argument("--process-workers", type=int, default=2)
     parser.add_argument("--upload-workers", type=int, default=1)
     parser.add_argument("--download-workers", type=int, default=2)
-    parser.add_argument("--majority-kernel", type=int, default=3,
-                        help="Majority filter kernel for 30m-resampled CDL years (default: 3)")
-    parser.add_argument("--no-erode", action="store_true",
-                        help="Skip boundary erosion + small-component cleanup for 30m-resampled CDL years")
-    parser.add_argument("--erode-iter", type=int, default=1)
-    parser.add_argument("--min-size", type=int, default=4)
-    parser.add_argument("--unknown-value", type=int, default=255)
-    parser.add_argument("--conf-threshold", type=int, default=55,
-                        help="CDL confidence threshold (0-100). Pixels below this → unknown (Maleki et al. 2024 best: 55)")
-    parser.add_argument("--no-conf-mask", action="store_true",
-                        help="Skip confidence layer masking even if confidence raster is present")
     parser.add_argument("--auth", action="store_true")
     args = parser.parse_args()
 
@@ -971,11 +753,4 @@ if __name__ == "__main__":
         process_workers  = args.process_workers,
         upload_workers   = args.upload_workers,
         download_workers = args.download_workers,
-        majority_kernel  = args.majority_kernel,
-        erode            = not args.no_erode,
-        erode_iter       = args.erode_iter,
-        min_size         = args.min_size,
-        unknown_value    = args.unknown_value,
-        conf_threshold   = args.conf_threshold,
-        no_conf_mask     = args.no_conf_mask,
     )

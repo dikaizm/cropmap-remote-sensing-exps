@@ -1,10 +1,10 @@
 """Experiment registry for Stage 3 training.
 
-Registered experiments (all optional — only built when band indices are provided):
-  single_date — peak NDVI date, all S2_BAND_NAMES (single-date baseline)
-  mt_base     — 4 phenological dates, all VEGE_BANDS (multi-temporal naive baseline)
-  gsi         — GSI-direct top-K channels per crop, union (spectral-temporal selection)
-  rf          — RF-direct top-K channels per crop, union (multi-class MDI selection)
+Four experiments:
+  single_date — peak NDVI date, ALL bands (single-date baseline)
+  mt_base     — 4 calendar dates, ALL VEGE_BANDS (multi-temporal baseline, no selection)
+  gsi         — multi-temporal, GSI-direct top-K channels
+  rf          — multi-temporal, RF-importance top-K channels (multi-class MDI)
 
 To add an experiment:
   1. Build its band indices in main() of train_segmentation.py
@@ -17,6 +17,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from crop_mapping_pipeline.config import (
+    MLFLOW_EXPERIMENT_TRAIN_SPATIAL,
+    MLFLOW_EXPERIMENT_TRAIN_SAME_AREA,
+    MLFLOW_EXPERIMENT_TRAIN_V6_SPATIAL,
+    MLFLOW_EXPERIMENT_TRAIN_V6_SAME_AREA,
     MLFLOW_EXPERIMENT_TRAIN_V6_1_SAME_AREA,
 )
 
@@ -27,7 +31,7 @@ class ExperimentConfig:
     description:       str
     band_indices:      Any           # list[int] or dict{yr: (list[int], list[str])}
     band_names:        list          # reference-year channel names
-    default_loss:      str  = "wce"  # "wce" | "focal_tversky" | "dynamic_balanced"
+    default_loss:      str  = "wce"  # "wce" | "phenology" | "focal_tversky" | "dynamic_balanced" | "recall"
     mlflow_experiment: str  = MLFLOW_EXPERIMENT_TRAIN_V6_1_SAME_AREA
     extra_kw:          dict = field(default_factory=dict)
 

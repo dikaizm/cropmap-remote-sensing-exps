@@ -2,12 +2,11 @@
 Pipeline orchestrator — runs all steps end-to-end.
 
 Steps:
-  process        — download raw S2 + CDL, process, upload to GDrive, delete raw
-  fetch          — download processed S2 + CDL from Google Drive (v6 layout)
-  fetch-processed— alias for fetch
-  score          — band scoring: GSI + RF importance (band_scoring.py)
-  train          — train segmentation models for band selection comparison (train_segmentation.py)
-  all            — run fetch + score + train in order
+  process  — download raw S2 + CDL, process, upload to GDrive, delete raw
+  fetch    — download processed S2 + CDL from Google Drive
+  score    — band scoring: GSI + RF importance (band_scoring.py)
+  train    — train segmentation models for band selection comparison (train_segmentation.py)
+  all      — run fetch + score + train in order
 
 Usage:
     python pipeline.py --stages process --years 2022 2023 2024 --shutdown
@@ -45,10 +44,47 @@ from crop_mapping_pipeline.config import (
 
 log = logging.getLogger(__name__)
 
-VALID_STAGES = ["fetch-processed", "fetch", "feature", "train", "all"]
+VALID_STAGES = ["process", "fetch-raw", "fetch-processed", "fetch", "feature", "train", "all"]
 
 
 # ── Stage runners ─────────────────────────────────────────────────────────────
+
+def run_process(force=False, data_dir=None, years=None, raw_s2_dir=None, raw_cdl_dir=None):
+    """Stage 0.5 — fetch raw S2 tiles (flat folder), process, upload, delete raw."""
+    log.info("=" * 60)
+    log.info("STAGE 0.5 — Process raw S2 + CDL")
+    log.info("=" * 60)
+    from crop_mapping_pipeline.stages.batch_process_v2 import main as batch_main
+    from crop_mapping_pipeline.config import GDRIVE_RAW_S2_V2_FOLDER_ID
+
+    raw_dir = raw_s2_dir or str(_ROOT / "data" / "raw" / "s2")
+    batch_main(
+        folder_id   = GDRIVE_RAW_S2_V2_FOLDER_ID,
+        output_dir  = raw_dir,
+        years       = years or ["2022", "2023", "2024"],
+        data_dir    = data_dir,
+        raw_cdl_dir = raw_cdl_dir,
+        download_cdl= True,
+        overwrite   = force,
+    )
+
+
+def run_fetch_raw(force=False, data_dir=None, years=None, raw_s2_dir=None, **_):
+    """fetch-raw — download raw S2 tiles from flat GDrive folder."""
+    log.info("=" * 60)
+    log.info("FETCH RAW — Download raw S2 tiles from Google Drive")
+    log.info("=" * 60)
+    from crop_mapping_pipeline.stages.fetch_data_v2 import main as fetch_raw_main
+    from crop_mapping_pipeline.config import GDRIVE_RAW_S2_V2_FOLDER_ID
+
+    raw_dir = raw_s2_dir or str(_ROOT / "data" / "raw" / "s2")
+    fetch_raw_main(
+        folder_id  = GDRIVE_RAW_S2_V2_FOLDER_ID,
+        output_dir = raw_dir,
+        years      = years or ["2022", "2023", "2024"],
+        overwrite  = force,
+    )
+
 
 def run_fetch(force=False, data_dir=None, years=None, **_):
     """fetch / fetch-processed — download processed S2 + CDL from Google Drive."""
@@ -57,7 +93,7 @@ def run_fetch(force=False, data_dir=None, years=None, **_):
     log.info("=" * 60)
     import os
     from googleapiclient.http import MediaIoBaseDownload
-    from crop_mapping_pipeline.stages.fetch_data_v6 import _build_drive_service, list_folder
+    from crop_mapping_pipeline.stages.fetch_data_v2 import _build_drive_service, list_folder
     from crop_mapping_pipeline.config import (
         GDRIVE_PROCESSED_S2_FOLDER_IDS, GDRIVE_PROCESSED_CDL_FOLDER_ID,
         S2_PROCESSED_DIR, CDL_DIR,
@@ -117,6 +153,8 @@ def run_train(force=False, data_dir=None):
 # ── Pipeline runner ───────────────────────────────────────────────────────────
 
 STAGE_FNS = {
+    "process":        run_process,
+    "fetch-raw":      run_fetch_raw,
     "fetch-processed": run_fetch,
     "fetch":          run_fetch,      # alias for fetch-processed
     "feature":        run_feature,
@@ -124,7 +162,8 @@ STAGE_FNS = {
 }
 
 
-def run_pipeline(stages, force=False, data_dir=None, years=None, log_file=None):
+def run_pipeline(stages, force=False, data_dir=None, years=None,
+                 raw_s2_dir=None, raw_cdl_dir=None, log_file=None):
     """Execute each stage in order, recording timing and errors."""
     if "all" in stages:
         stages = ["fetch", "feature", "train"]
@@ -144,8 +183,12 @@ def run_pipeline(stages, force=False, data_dir=None, years=None, log_file=None):
         log.info(f"{'─' * 60}")
 
         try:
-            if stage in ("fetch", "fetch-processed"):
-                fn(force=force, data_dir=data_dir, years=years)
+            if stage == "process":
+                fn(force=force, data_dir=data_dir, years=years,
+                   raw_s2_dir=raw_s2_dir, raw_cdl_dir=raw_cdl_dir)
+            elif stage in ("fetch", "fetch-processed", "fetch-raw"):
+                fn(force=force, data_dir=data_dir, years=years,
+                   raw_s2_dir=raw_s2_dir)
             else:
                 fn(force=force, data_dir=data_dir)
             elapsed        = time.time() - t0
@@ -265,6 +308,14 @@ def main():
         help="Years to process/fetch (default: all). Used by process and fetch stages.",
     )
     parser.add_argument(
+        "--raw-s2-dir", default=None, metavar="PATH",
+        help="Directory for raw S2 files (used by process stage)",
+    )
+    parser.add_argument(
+        "--raw-cdl-dir", default=None, metavar="PATH",
+        help="Directory for raw CDL files (used by process stage)",
+    )
+    parser.add_argument(
         "--force", action="store_true",
         help="Re-run stages even if outputs already exist",
     )
@@ -299,6 +350,8 @@ def main():
         force       = args.force,
         data_dir    = args.data_dir,
         years       = args.years,
+        raw_s2_dir  = args.raw_s2_dir,
+        raw_cdl_dir = args.raw_cdl_dir,
         log_file    = log_file,
     )
 

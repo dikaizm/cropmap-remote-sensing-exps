@@ -1,8 +1,4 @@
-"""MLflow helpers — call patch_artifact_logging() once at entry-point startup.
-
-Requires MLFLOW_DISABLE_TELEMETRY=true before `import mlflow` to prevent a
-background telemetry thread from hanging in MLflow 3.x on GPU servers.
-"""
+"""MLflow helpers — call patch_artifact_logging() once at entry-point startup."""
 
 import logging
 

@@ -92,6 +92,7 @@ DEVICE = "cpu" if os.environ.get("FORCE_CPU") else get_device()
 # all archs in the run; warmup_epochs/sched_power override config defaults.
 HP_OVERRIDE: dict | None = None   # {lr, weight_decay, warmup_epochs, sched_power}
 HP_TAG: str = ""                  # short run-name suffix, e.g. "lr1e-04_wd1e-02_wu5_pw0.9"
+SEED_TAG: str = ""                # seed suffix appended to run names when --seed-grid is used
 SESSION_LOG_PATH: str | None = None  # top-level session .log file (LOGS_DIR)
 # (run_id, per_run_log_path) captured per finished run; logs uploaded to MLflow
 # only AFTER the whole session ends (avoids HTTP errors from uploading the
@@ -114,8 +115,8 @@ def _resolve_hp(cfg: dict) -> dict:
     batch_size=None → use the module BATCH_SIZE (CLI/config). grad_clip=0 → off.
     """
     o = HP_OVERRIDE or {}
-    optimizer = str(o.get("optimizer", "adamw")).lower()
-    scheduler = str(o.get("scheduler", "polynomial")).lower()
+    optimizer = str(o.get("optimizer", cfg.get("optimizer", "adamw"))).lower()
+    scheduler = str(o.get("scheduler", cfg.get("scheduler", "polynomial"))).lower()
     if optimizer not in _OPTIMIZERS:
         raise ValueError(f"--hp-grid optimizer '{optimizer}' invalid; choose {sorted(_OPTIMIZERS)}")
     if scheduler not in _SCHEDULERS:
@@ -123,11 +124,11 @@ def _resolve_hp(cfg: dict) -> dict:
     return {
         "lr":            float(o.get("lr",            cfg["lr"])),
         "weight_decay":  float(o.get("weight_decay",  cfg["weight_decay"])),
-        "warmup_epochs": int(o.get("warmup_epochs",   WARMUP_EPOCHS)),
-        "sched_power":   float(o.get("sched_power",    SCHED_POWER)),
+        "warmup_epochs": int(o.get("warmup_epochs",   cfg.get("warmup_epochs", WARMUP_EPOCHS))),
+        "sched_power":   float(o.get("sched_power",   cfg.get("sched_power", SCHED_POWER))),
         "scheduler":     scheduler,
         "optimizer":     optimizer,
-        "momentum":      float(o.get("momentum", 0.9)),   # SGD only
+        "momentum":      float(o.get("momentum", cfg.get("momentum", 0.9))),   # SGD only
         "grad_clip":     float(o.get("grad_clip", 0.0)),  # 0 = disabled
         "batch_size":    int(o["batch_size"]) if o.get("batch_size") else None,
     }
@@ -356,8 +357,8 @@ def _filter_s2_by_band_indices(s2_paths, band_indices, n_bands_per_file=N_BANDS_
     contribute at least one channel in band_indices, with indices remapped to
     their positions in the reduced stack.
 
-    Example: 25 files × 10 bands = 250 channels.  single_date selects bands [140..149]
-    (file 14 only) → returns [s2_paths[14]], remapped to [0..9].
+    Example: 25 files × 11 bands = 275 channels.  single_date selects bands [157..165]
+    (file 14 only) → returns [s2_paths[14]], remapped to [0..8].
     """
     if band_indices is None:
         return s2_paths, None
@@ -1468,6 +1469,7 @@ def run_experiment(
     cache_only=False,       # build PreloadedDataset cache then exit without training
     norm_mode="percentile", # "percentile" | "minmax" | "zscore"
     skip_ndvi=False,        # skip NDVI GT-vs-pred disagreement analysis (CalCROP21 method)
+    no_aug=False,           # disable train-time geometric + spectral augmentation
 ):
     """band_indices: list[int] same for all years, or dict{yr: (idx, names)} per-year."""
     cfg           = ARCH_CFG[arch]
@@ -1624,7 +1626,7 @@ def run_experiment(
     # Band indices threaded through to enable per-band (vs per-channel) spectral
     # augmentation. For per-year dict, use the primary year's indices.
     _aug_bi = primary_idx_local if isinstance(band_indices, dict) else band_indices
-    aug_train_ds = AugmentedSubset(train_ds, band_indices=_aug_bi)
+    aug_train_ds = train_ds if no_aug else AugmentedSubset(train_ds, band_indices=_aug_bi)
     # In --eval-only with on-the-fly (no-preload) datasets, workers can't pickle open
     # rasterio handles under macOS spawn; use 0 workers (single test pass, speed is fine).
     _nw = 0 if eval_only else 4
@@ -1675,7 +1677,8 @@ def run_experiment(
 
     # ── MLflow run (child — nested under parent created in main()) ────────────
 
-    with mlflow.start_run(run_name=exp_name, nested=True, log_system_metrics=True) as run:
+    _child_run_name = f"eval_{exp_name}" if eval_only else exp_name
+    with mlflow.start_run(run_name=_child_run_name, nested=True, log_system_metrics=True) as run:
         mlflow.log_params({
             "experiment":     exp_name,
             "architecture":   arch,
@@ -1696,6 +1699,7 @@ def run_experiment(
             "lr_scheduler":   _sched_label,
             "loss":           loss,
             "norm_mode":      norm_mode,
+            "augmentation":   not no_aug,
             "train_years":    str(TRAIN_YEARS),
             "test_year":      TEST_YEAR,
             "train_patches":  n_train,
@@ -1942,17 +1946,41 @@ def run_experiment(
             log.info(f"  {'-'*38}")
             log.info(f"  {'mIoU':<20} {'':>6}  {test_r['miou']:>7.4f}")
 
-        # ── eval-only: write per-patch viz + metrics CSV, then stop ────────────
-        # (skips training-only artifacts: history/curve/seg-map regen/gdrive upload)
+        # ── eval-only: write full segmentation map + per-patch viz + metrics CSV ─
+        # (skips training-only artifacts: history/curve/gdrive upload)
         if eval_only:
+            # Full-scene segmentation map (same renderer as training finalize path)
+            if not skip_viz and primary_s2_filtered is not None:
+                log.info(f"  [--eval-only] Running full-image inference for {exp_name}...")
+                gt_map, _   = load_gt_remap(str(CDL_TRAIN))
+                pred_map, _ = run_full_inference(
+                    model, primary_s2_filtered, primary_idx_local,
+                    patch_size=PATCH_SIZE, stride=PATCH_SIZE,
+                    channel_stats=None, band_percentiles=band_percentiles,
+                    norm_mode=norm_mode,
+                )
+                seg_path = exp_dir / "test_segmentation_map.png"
+                rgb_img  = _load_rgb_for_viz(primary_s2_filtered, band_percentiles, downsample=4)
+                save_segmentation_map(
+                    pred_map, gt_map,
+                    title=f"Segmentation Map ({TEST_YEAR})",
+                    save_path=str(seg_path),
+                    rgb_img=rgb_img,
+                )
+                mlflow.log_artifact(str(seg_path))
+                del pred_map, gt_map
             if test_r is not None and test_dl is not None:
                 log.info(f"  [--eval-only] Saving per-patch test visualizations + metrics CSV for {exp_name}...")
-                save_test_patch_visualizations(
+                patch_dir = save_test_patch_visualizations(
                     test_dl, test_r["preds"], test_r["labels"],
                     s2_processed, test_ds, train_year_datasets_raw,
                     band_percentiles, exp_dir, exp_name,
                 )
-                log.info(f"  [--eval-only] Outputs written to {exp_dir}")
+                mlflow.log_artifacts(str(patch_dir), artifact_path="test_patches")
+                _metrics_csv = exp_dir / "test_patch_metrics.csv"
+                if _metrics_csv.exists():
+                    mlflow.log_artifact(str(_metrics_csv))
+                log.info(f"  [--eval-only] Outputs written to {exp_dir} + logged to MLflow")
             else:
                 log.warning("  [--eval-only] No test split available — nothing to write")
             _eval_run_id = run.info.run_id
@@ -2428,29 +2456,31 @@ def save_test_patch_visualizations(
                 "classes_present": "|".join(CLASS_LABELS[c] for c in present),
             })
 
-            fig, axes = plt.subplots(1, n_panels, figsize=(6 * n_panels, 5))
+            fig, axes = plt.subplots(1, n_panels, figsize=(6 * n_panels, 5.6))
 
             axes[0].imshow(rgb)
-            axes[0].set_title("Median Composite\n(B4/B3/B2, 2024)", fontsize=11, fontweight="bold")
+            axes[0].set_title("Median Composite\n(B4/B3/B2, 2024)", fontsize=20, fontweight="bold")
             axes[0].axis("off")
 
             axes[1].imshow(gt,    cmap=SEG_CMAP, norm=SEG_NORM, interpolation="nearest")
-            axes[1].set_title("Ground Truth",    fontsize=11, fontweight="bold")
+            axes[1].set_title("Ground Truth",    fontsize=20, fontweight="bold")
             axes[1].axis("off")
 
             axes[2].imshow(pred,  cmap=SEG_CMAP, norm=SEG_NORM, interpolation="nearest")
-            axes[2].set_title("Prediction",      fontsize=11, fontweight="bold")
+            axes[2].set_title("Prediction",      fontsize=20, fontweight="bold")
             axes[2].axis("off")
 
             axes[3].imshow(error, cmap=error_cmap, norm=error_norm, interpolation="nearest")
-            axes[3].set_title("Correct / Incorrect", fontsize=11, fontweight="bold")
+            axes[3].set_title("Correct / Incorrect", fontsize=20, fontweight="bold")
             axes[3].axis("off")
 
+            # tight panel spacing + title close above panels, legend below in one line
+            fig.subplots_adjust(left=0.005, right=0.995, top=0.86, bottom=0.14, wspace=0.005)
             fig.legend(handles=crop_legend + error_legend, loc="lower center",
-                       ncol=min(NUM_CLASSES + 2, 9), fontsize=9,
-                       bbox_to_anchor=(0.5, -0.02), frameon=True)
-            plt.suptitle(f"{exp_name} — Test Patch {patch_idx:04d}", fontsize=12, y=1.02)
-            plt.tight_layout()
+                       ncol=len(crop_legend) + len(error_legend), fontsize=18,
+                       columnspacing=0.8, handletextpad=0.35,
+                       bbox_to_anchor=(0.5, 0.0), frameon=True)
+            fig.suptitle(f"Test Patch {patch_idx:04d}", fontsize=26, fontweight="bold", y=0.97)
             plt.savefig(str(patch_dir / f"patch_{patch_idx:04d}.png"), dpi=100, bbox_inches="tight")
             plt.close()
             patch_idx += 1
@@ -2530,25 +2560,25 @@ def save_segmentation_map(pred_map, gt_map, title, save_path, downsample=4, rgb_
     error_norm = BoundaryNorm([0, 1, 2, 3], error_cmap.N)
 
     n_panels = 4 if rgb_img is not None else 3
-    fig, axes = plt.subplots(1, n_panels, figsize=(7 * n_panels, 8))
+    fig, axes = plt.subplots(1, n_panels, figsize=(7 * n_panels, 8.5))
 
     panel = 0
     if rgb_img is not None:
         axes[panel].imshow(rgb_img)
-        axes[panel].set_title("Median Composite\n(B4/B3/B2, 2024)", fontsize=12, fontweight="bold")
+        axes[panel].set_title("Median Composite\n(B4/B3/B2, 2024)", fontsize=22, fontweight="bold")
         axes[panel].axis("off")
         panel += 1
 
     axes[panel].imshow(gt_ds,   cmap=SEG_CMAP,   norm=SEG_NORM,   interpolation="nearest")
-    axes[panel].set_title("Ground Truth (CDL)", fontsize=12, fontweight="bold")
+    axes[panel].set_title("Ground Truth (CDL)", fontsize=22, fontweight="bold")
     axes[panel].axis("off")
     panel += 1
     axes[panel].imshow(pred_ds, cmap=SEG_CMAP,   norm=SEG_NORM,   interpolation="nearest")
-    axes[panel].set_title("Prediction",         fontsize=12, fontweight="bold")
+    axes[panel].set_title("Prediction",         fontsize=22, fontweight="bold")
     axes[panel].axis("off")
     panel += 1
     axes[panel].imshow(error,   cmap=error_cmap, norm=error_norm, interpolation="nearest")
-    axes[panel].set_title("Correct / Incorrect", fontsize=12, fontweight="bold")
+    axes[panel].set_title("Correct / Incorrect", fontsize=22, fontweight="bold")
     axes[panel].axis("off")
 
     crop_patches = [mpatches.Patch(color=CROP_COLORS[i], label=CLASS_LABELS[i])
@@ -2558,11 +2588,12 @@ def save_segmentation_map(pred_map, gt_map, title, save_path, downsample=4, rgb_
         mpatches.Patch(color="#ee2222", label="Incorrect"),
         mpatches.Patch(color="#d0d0d0", label="Background"),
     ]
+    # no figure title; tight spacing, legend below in one line
+    fig.subplots_adjust(left=0.005, right=0.995, top=0.97, bottom=0.12, wspace=0.03)
     fig.legend(handles=crop_patches + error_patches, loc="lower center",
-               ncol=min(NUM_CLASSES + 2, 9), fontsize=9,
-               bbox_to_anchor=(0.5, -0.01), frameon=True)
-    plt.suptitle(title, fontsize=13, y=1.01)
-    plt.tight_layout()
+               ncol=len(crop_patches) + len(error_patches), fontsize=18,
+               columnspacing=0.8, handletextpad=0.35,
+               bbox_to_anchor=(0.5, 0.0), frameon=True)
     plt.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close()
     log.info(f"  Saved: {save_path}")
@@ -2757,15 +2788,24 @@ def main(
     no_preload=False,
     cache_only=False,
     norm_mode="percentile",
+    no_aug=False,
     hp=None,
+    seed=None,
 ):
-    global BATCH_SIZE, MAX_EPOCHS, HP_OVERRIDE, HP_TAG
+    global BATCH_SIZE, MAX_EPOCHS, HP_OVERRIDE, HP_TAG, SEED, SEED_TAG
     if batch_size:
         BATCH_SIZE = batch_size
         log.info(f"Batch size overridden: {BATCH_SIZE}")
     if epochs:
         MAX_EPOCHS = epochs
         log.info(f"Max epochs overridden: {MAX_EPOCHS}")
+
+    if seed is not None:
+        SEED = seed
+        SEED_TAG = f"seed{seed}"
+        log.info(f"Seed overridden: {SEED}")
+    else:
+        SEED_TAG = ""
 
     HP_OVERRIDE = hp or None
     HP_TAG = _hp_tag(hp) if hp else ""
@@ -3073,7 +3113,11 @@ def main(
                     else (f"_k{top_k}" if top_k else ""))
         if HP_TAG:
             _sel_sfx += f"_{HP_TAG}"
+        if SEED_TAG:
+            _sel_sfx += f"_{SEED_TAG}"
         parent_run_name = f"exp_{exp_key}{_sel_sfx}_{timestamp}"
+        if EVAL_ONLY_CKPT is not None:
+            parent_run_name = f"eval_{parent_run_name}"
         with mlflow.start_run(run_name=parent_run_name) as parent_run:
             mlflow.log_params({
                 "experiment":   f"exp_{exp_key}",
@@ -3082,6 +3126,7 @@ def main(
                 "test_year":    TEST_YEAR,
                 "description":  cfg_entry.description,
                 "loss":         loss,
+                "seed":         SEED,
                 **({"top_k": top_k} if top_k else {}),
                 **({"percentile": percentile} if percentile is not None else {}),
                 **({f"hp_{k}": v for k, v in HP_OVERRIDE.items()} if HP_OVERRIDE else {}),
@@ -3112,6 +3157,7 @@ def main(
                     no_preload=no_preload,
                     cache_only=cache_only,
                     norm_mode=norm_mode,
+                    no_aug=no_aug,
                     **extra_kw,
                 )
                 if result is not None:
@@ -3250,6 +3296,9 @@ if __name__ == "__main__":
              "configured folder id, upload runs automatically.")
     parser.add_argument("--no-upload-cache", action="store_true",
                         help="Disable the automatic preload-cache upload after --build-cache-only.")
+    parser.add_argument("--no-aug", action="store_true",
+                        help="Disable train-time augmentation (geometric + spectral). "
+                             "Useful for ablation or fast debug runs.")
     parser.add_argument("--data-dir", default=None, help="Override data/processed directory")
     parser.add_argument("--phenol-dates", default=None, help="Path to pre-computed phenol_dates.json for Exp B multi-temporal baseline")
     parser.add_argument("--shutdown", action="store_true", help="Stop the RunPod pod after training")
@@ -3303,6 +3352,13 @@ if __name__ == "__main__":
              "tagged with the combo. Combos run outermost, nesting with --top-k/--percentile "
              "sweeps. See configs/hp_grid_example.json.",
     )
+    parser.add_argument(
+        "--seed-grid", type=int, nargs="+", default=None, metavar="SEED",
+        help="Run the full experiment matrix once per seed for stability testing. "
+             "Each seed overrides config.SEED, tags run names with _seed{N}, and logs "
+             "'seed' as an MLflow param. The spatial block split is re-seeded each run "
+             "so splits differ across seeds. E.g. --seed-grid 42 123 456 789",
+    )
     args = parser.parse_args()
 
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -3345,11 +3401,9 @@ if __name__ == "__main__":
             log.error(f"Checkpoint not found: {ckpt_path}")
             sys.exit(1)
         EVAL_ONLY_CKPT = str(ckpt_path)
-        # Keep all MLflow logging local (do not pollute the tracking server with eval runs).
-        _eval_mlruns = Path(tempfile.mkdtemp(prefix="evalonly_mlruns_"))
-        mlflow.set_tracking_uri(f"file://{_eval_mlruns}")
-        log.info(f"--eval-only: MLflow → local {_eval_mlruns} (server untouched)")
-        log.info(f"--eval-only: evaluating {ckpt_path}")
+        # Eval runs log to the tracking server (run names prefixed "eval_"), with
+        # the full segmentation map, per-patch PNGs, and metrics CSV as artifacts.
+        log.info(f"--eval-only: evaluating {ckpt_path} (logged to MLflow as eval_* runs)")
 
     n_sel_modes = sum([bool(args.top_k), bool(args.percentile), bool(args.score_threshold)])
     if n_sel_modes > 1:
@@ -3374,41 +3428,52 @@ if __name__ == "__main__":
         for i, (a, c) in enumerate(hp_combos):
             log.info(f"  [{i+1}/{len(hp_combos)}] arch={a or 'ALL'}  {c}")
 
-    for hp_arch, hp in hp_combos:
-        # Per-arch grid pinned to an arch excluded by --arch → skip.
-        if hp_arch is not None and args.arch and hp_arch not in args.arch:
-            log.info(f"Skip HP combo (arch {hp_arch} not in --arch {args.arch})")
-            continue
-        run_archs = [hp_arch] if hp_arch is not None else args.arch
-        if hp is not None:
-            log.info(f"{'#'*65}")
-            log.info(f"  HP combo: arch={hp_arch or 'ALL'}  {hp}")
-            log.info(f"{'#'*65}")
-        for mode, val in sweep:
-            if mode is not None:
-                log.info(f"{'='*65}")
-                mode_label = {"percentile": "Percentile", "top_k": "Top-K", "score_threshold": "Score-threshold"}.get(mode, mode)
-                log.info(f"  {mode_label} sweep: {mode}={val}")
-                log.info(f"{'='*65}")
-            main(
-                exps=args.exp,
-                archs=run_archs,
-                loss=args.loss,
-                force=args.force,
-                data_dir=args.data_dir,
-                phenol_dates=args.phenol_dates,
-                skip_viz=args.skip_viz,
-                skip_ndvi=(not args.ndvi) or args.skip_ndvi,
-                top_k=val if mode == "top_k" else None,
-                percentile=val if mode == "percentile" else None,
-                score_threshold=val if mode == "score_threshold" else None,
-                batch_size=args.batch_size,
-                epochs=args.epochs,
-                no_preload=args.no_preload,
-                cache_only=args.build_cache_only,
-                norm_mode=args.norm,
-                hp=hp,
-            )
+    seed_list = args.seed_grid if args.seed_grid else [None]
+    if args.seed_grid:
+        log.info(f"Seed grid: {seed_list} ({len(seed_list)} seed(s))")
+
+    for seed_val in seed_list:
+        if seed_val is not None:
+            log.info(f"{'*'*65}")
+            log.info(f"  Seed: {seed_val}")
+            log.info(f"{'*'*65}")
+        for hp_arch, hp in hp_combos:
+            # Per-arch grid pinned to an arch excluded by --arch → skip.
+            if hp_arch is not None and args.arch and hp_arch not in args.arch:
+                log.info(f"Skip HP combo (arch {hp_arch} not in --arch {args.arch})")
+                continue
+            run_archs = [hp_arch] if hp_arch is not None else args.arch
+            if hp is not None:
+                log.info(f"{'#'*65}")
+                log.info(f"  HP combo: arch={hp_arch or 'ALL'}  {hp}")
+                log.info(f"{'#'*65}")
+            for mode, val in sweep:
+                if mode is not None:
+                    log.info(f"{'='*65}")
+                    mode_label = {"percentile": "Percentile", "top_k": "Top-K", "score_threshold": "Score-threshold"}.get(mode, mode)
+                    log.info(f"  {mode_label} sweep: {mode}={val}")
+                    log.info(f"{'='*65}")
+                main(
+                    exps=args.exp,
+                    archs=run_archs,
+                    loss=args.loss,
+                    force=args.force,
+                    data_dir=args.data_dir,
+                    phenol_dates=args.phenol_dates,
+                    skip_viz=args.skip_viz,
+                    skip_ndvi=(not args.ndvi) or args.skip_ndvi,
+                    top_k=val if mode == "top_k" else None,
+                    percentile=val if mode == "percentile" else None,
+                    score_threshold=val if mode == "score_threshold" else None,
+                    batch_size=args.batch_size,
+                    epochs=args.epochs,
+                    no_preload=args.no_preload,
+                    cache_only=args.build_cache_only,
+                    norm_mode=args.norm,
+                    no_aug=args.no_aug,
+                    hp=hp,
+                    seed=seed_val,
+                )
 
     # ── Upload all logs once, after the whole session finished ────────────────
     _flush_deferred_logs()

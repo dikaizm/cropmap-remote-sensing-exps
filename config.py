@@ -34,7 +34,7 @@ S2_NODATA        = -9999.0
 # criterion (>=50% non-unknown pixels). Excludes residual high-cloud/partial-capture
 # dates (e.g. 2024-01-31 = 14.8% valid, 2024-12-11 = 4.8%) from selection + training.
 S2_MIN_VALID_FRAC = 0.50
-# 9 vegetation bands — legacy alias for GSI/RF feature analysis (S2_BAND_NAMES minus B8A)
+# 9 vegetation bands — legacy, kept for GSI/RF feature analysis (excludes B8A)
 VEGE_BANDS       = ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "B11", "B12"]
 
 # ── CDL classes ────────────────────────────────────────────────────────────────
@@ -117,8 +117,19 @@ GDRIVE_S2_TEST_B_FOLDER_ID = "1_RP6y_NsmN7OVkruQg6X3WrWbVOgjF8H"
 # ── MLflow ─────────────────────────────────────────────────────────────────────
 MLFLOW_TRACKING_URI        = "https://mlflow-geoai.stelarea.com"
 MLFLOW_EXPERIMENT_PIPELINE = "cropmap_pipeline_runs"
+MLFLOW_EXPERIMENT_DATASET  = "cropmap_data_processing"
 MLFLOW_EXPERIMENT_FEATURE  = "cropmap_feature_selection_s2"
-MLFLOW_EXPERIMENT_TRAIN_V6_1_SAME_AREA = "cropmap_segmentation_s2_v6.1_same_area"   # current thesis (v6.1)
+MLFLOW_EXPERIMENT_TRAIN        = "cropmap_segmentation_s2"
+MLFLOW_EXPERIMENT_TRAIN_V2     = "cropmap_segmentation_s2_v2"
+MLFLOW_EXPERIMENT_TRAIN_V3     = "cropmap_segmentation_s2_v3"
+MLFLOW_EXPERIMENT_TRAIN_DIRECT = "cropmap_segmentation_s2_direct"
+MLFLOW_EXPERIMENT_TRAIN_SINGLE_YEAR = "cropmap_segmentation_s2_single_year"
+MLFLOW_EXPERIMENT_TRAIN_6CLASS      = "cropmap_segmentation_s2_6class"
+MLFLOW_EXPERIMENT_TRAIN_SPATIAL      = "cropmap_segmentation_s2_spatial"
+MLFLOW_EXPERIMENT_TRAIN_SAME_AREA    = "cropmap_segmentation_s2_same_area"
+MLFLOW_EXPERIMENT_TRAIN_V6_SPATIAL   = "cropmap_segmentation_s2_v6_spatial"
+MLFLOW_EXPERIMENT_TRAIN_V6_SAME_AREA = "cropmap_segmentation_s2_v6_same_area"
+MLFLOW_EXPERIMENT_TRAIN_V6_1_SAME_AREA = "cropmap_segmentation_s2_v6.1_same_area"
 
 # ── GSI scoring hyperparameters ───────────────────────────────────────────────
 SAMPLE_FRACTION = 0.20   # 20% of labeled crop pixels for GSI computation
@@ -155,8 +166,15 @@ WARMUP_EPOCHS  = 0         # linear-warmup epochs before polynomial decay (0 = n
 WARMUP_START_FACTOR = 0.1  # initial lr multiplier at epoch 0 during warmup
 
 ARCH_CFG = {
-    "deeplabv3plus_cbam": {"lr": 1e-4, "weight_decay": 1e-4, "encoder": "resnet50"},
-    "segformer":          {"lr": 6e-5, "weight_decay": 1e-2, "encoder": "mit_b2"},
+    "deeplabv3plus_cbam": {
+        "lr": 1e-2, "weight_decay": 1e-4, "encoder": "resnet50",
+        "optimizer": "sgd", "scheduler": "polynomial",
+    },
+    "segformer": {
+        "lr": 6e-5, "weight_decay": 5e-2, "encoder": "mit_b2",
+        "optimizer": "adamw", "scheduler": "polynomial",
+        "warmup_epochs": 5, "sched_power": 1.0,
+    },
 }
 
 # ── Band scoring hyperparameters ───────────────────────────────────────────────

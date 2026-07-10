@@ -7,10 +7,8 @@ Usage:
 
 Produces:
   - Split map: CDL background with colored patch rectangles
-    (blue=train, orange=val, red=test)
+    (blue=train, green=val, red=test)
   - Split bar chart: patch counts per class per split
-
-Note: split is purely spatial (block-level, no random patch mixing across blocks).
 """
 
 import argparse

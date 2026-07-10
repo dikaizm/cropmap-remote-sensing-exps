@@ -1,10 +1,9 @@
 """
-Stage 1v3 — Feature Analysis v2 (Date × Band candidate generation + direct selection)
+Stage 1v3 + 2v2 — Feature Analysis v2 (Date × Band Selection)
 
-Stage 1 implementation lives under:
+Stage versions live under:
   - stages/selections/feature_analysis_v2/stage1/
-Direct selectors (gsi_direct/rf_direct, single_date_*, naive_mt_*) live under:
-  - stages/selections/
+  - stages/selections/feature_analysis_v2/stage2/
 """
 
 import argparse
@@ -53,6 +52,7 @@ from crop_mapping_pipeline.config import (
     MAX_DATES_PER_CROP,
     MIN_VALID_FRAC,
     MLFLOW_EXPERIMENT_FEATURE,
+    MLFLOW_EXPERIMENT_TRAIN_V3,
     MLFLOW_TRACKING_URI,
     PATCH_SIZE,
     PROCESSED_DIR as _PROCESSED_DIR,
@@ -102,13 +102,27 @@ LOGS_DIR = _LOGS_DIR
 
 # Stage output paths — defaults based on PROCESSED_DIR; overridden by configure_data_dir
 STAGE1V3_CANDIDATES_JSON        = _PROCESSED_DIR / "s2" / "2024" / "stage1v3_candidates.json"
+STAGE2V3_PER_CROP_JSON          = _PROCESSED_DIR / "stage2v3_per_crop_results.json"
+STAGE3_EXP_C_V2_JSON            = _PROCESSED_DIR / "stage3_exp_c_v2.json"
+STAGE3_EXP_C_V2_BANDS           = _PROCESSED_DIR / "stage3_exp_c_v2_bands.txt"
 STAGE3_EXP_D_JSON               = _PROCESSED_DIR / "stage3_exp_d.json"
 STAGE3_EXP_D_BANDS              = _PROCESSED_DIR / "stage3_exp_d_bands.txt"
+STAGE2V3_RF_PER_CROP_JSON       = _PROCESSED_DIR / "stage2v3_rf_per_crop_results.json"
+STAGE3_EXP_C_V2_RF_JSON         = _PROCESSED_DIR / "stage3_exp_c_v2_rf.json"
+STAGE3_EXP_C_V2_RF_BANDS        = _PROCESSED_DIR / "stage3_exp_c_v2_rf_bands.txt"
+STAGE3_EXP_C_V2_BANDS_PROJECTED = _PROCESSED_DIR / "stage3_exp_c_v2_bands_projected.json"
+STAGE2V3_SWEEP_PER_CROP_JSON    = _PROCESSED_DIR / "stage2v3_sweep_per_crop_results.json"
+STAGE3_EXP_C_V3_JSON            = _PROCESSED_DIR / "stage3_exp_c_v3.json"
+STAGE3_EXP_C_V3_BANDS           = _PROCESSED_DIR / "stage3_exp_c_v3_bands.txt"
 
 
 def configure_data_dir(data_dir: str | None) -> None:
     global S2_PROCESSED_DIR, CDL_BY_YEAR, PROCESSED_DIR, FIGURES_DIR
-    global STAGE1V3_CANDIDATES_JSON, STAGE3_EXP_D_JSON, STAGE3_EXP_D_BANDS
+    global STAGE1V3_CANDIDATES_JSON, STAGE2V3_PER_CROP_JSON, STAGE3_EXP_C_V2_JSON
+    global STAGE3_EXP_C_V2_BANDS, STAGE3_EXP_C_V2_BANDS_PROJECTED
+    global STAGE3_EXP_D_JSON, STAGE3_EXP_D_BANDS
+    global STAGE2V3_RF_PER_CROP_JSON, STAGE3_EXP_C_V2_RF_JSON, STAGE3_EXP_C_V2_RF_BANDS
+    global STAGE2V3_SWEEP_PER_CROP_JSON, STAGE3_EXP_C_V3_JSON, STAGE3_EXP_C_V3_BANDS
 
     if not data_dir:
         return
@@ -118,9 +132,23 @@ def configure_data_dir(data_dir: str | None) -> None:
     S2_PROCESSED_DIR = processed / "s2" / "2024"
     CDL_BY_YEAR = {"2024": processed / "cdl" / "cdl_2024_study_area_filtered.tif"}
     STAGE1V3_CANDIDATES_JSON = processed / "s2" / "2024" / "stage1v3_candidates.json"
+    STAGE2V3_PER_CROP_JSON = processed / "stage2v3_per_crop_results.json"
+    STAGE3_EXP_C_V2_JSON = processed / "stage3_exp_c_v2.json"
+    STAGE3_EXP_C_V2_BANDS = processed / "stage3_exp_c_v2_bands.txt"
+    STAGE3_EXP_C_V2_BANDS_PROJECTED = processed / "stage3_exp_c_v2_bands_projected.json"
     STAGE3_EXP_D_JSON = processed / "stage3_exp_d.json"
     STAGE3_EXP_D_BANDS = processed / "stage3_exp_d_bands.txt"
+    STAGE2V3_RF_PER_CROP_JSON = processed / "stage2v3_rf_per_crop_results.json"
+    STAGE3_EXP_C_V2_RF_JSON = processed / "stage3_exp_c_v2_rf.json"
+    STAGE3_EXP_C_V2_RF_BANDS = processed / "stage3_exp_c_v2_rf_bands.txt"
+    STAGE2V3_SWEEP_PER_CROP_JSON = processed / "stage2v3_sweep_per_crop_results.json"
+    STAGE3_EXP_C_V3_JSON = processed / "stage3_exp_c_v3.json"
+    STAGE3_EXP_C_V3_BANDS = processed / "stage3_exp_c_v3_bands.txt"
     log.info(f"Data dir overridden to {processed}")
+
+
+def get_stage2_output_path(selector: str) -> pathlib.Path:
+    return STAGE3_EXP_C_V2_RF_BANDS if selector == "rf" else STAGE3_EXP_C_V2_BANDS
 
 
 def _glob_s2_year(yr: str) -> list[str]:
@@ -135,8 +163,18 @@ def _glob_s2_year(yr: str) -> list[str]:
     return valid
 
 
+def build_band_name_to_idx(s2_files: list[str]) -> tuple[list[str], dict[str, int]]:
+    all_bandnames = []
+    for s2_path in s2_files:
+        fname = os.path.basename(s2_path)
+        match = re.search(r"_(\d{4}_\d{2}_\d{2})(_processed)?\.tif$", fname)
+        date_str = match.group(1).replace("_", "") if match else fname[:8]
+        all_bandnames.extend([f"{band}_{date_str}" for band in S2_BAND_NAMES])
+    return all_bandnames, {name: idx for idx, name in enumerate(all_bandnames)}
+
+
 def get_train_year_inputs() -> tuple[str, list[str], str]:
-    """Primary training year — used by --stage select (domain-scoped selectors)."""
+    """Primary training year (2022) — used by Stage 2 and Stage 2v3."""
     s2_year = TRAIN_YEARS[0]
     s2_files = _glob_s2_year(s2_year)
     assert s2_files, f"No S2 files for year {s2_year} in {S2_PROCESSED_DIR}"
@@ -357,6 +395,18 @@ def fmt_date(date_str: str) -> str:
         return date_str
 
 
+def load_stage1_candidates() -> tuple[dict, dict, list]:
+    if not os.path.exists(STAGE1V3_CANDIDATES_JSON):
+        raise FileNotFoundError(
+            f"Stage 1v3 candidates not found: {STAGE1V3_CANDIDATES_JSON}\n"
+            "Run Stage 1v3 first:  python feature_analysis_v2.py --stage 1"
+        )
+    with open(STAGE1V3_CANDIDATES_JSON) as f:
+        payload = json.load(f)
+    log.info(f"Loaded Stage 1v3 candidates from {STAGE1V3_CANDIDATES_JSON}")
+    return payload["date_candidates_per_crop"], payload["band_candidates_per_crop"], payload["all_dates"]
+
+
 _MLFLOW_EXPERIMENT_OVERRIDE: str | None = None
 
 
@@ -435,6 +485,125 @@ def plot_gsi_heatmaps(gsi_df: pd.DataFrame, all_dates: list, save_dir: pathlib.P
     return saved
 
 
+def plot_selection_table(results_per_crop: dict, save_path: pathlib.Path) -> None:
+    rows = []
+    for crop_id in KEEP_CLASSES:
+        result = results_per_crop.get(crop_id, {})
+        rows.append(
+            {
+                "Crop": CDL_CLASS_NAMES.get(crop_id, f"cls{crop_id}"),
+                "Key Period": ", ".join(fmt_date(date) for date in result.get("dates", [])) or "—",
+                "Selected Bands": ", ".join(result.get("bands", [])) or "—",
+                "IoU (bands)": f"{result.get('best_iou_after_bands', 0.0):.4f}",
+            }
+        )
+    df = pd.DataFrame(rows)
+    csv_path = save_path.with_suffix(".csv")
+    df.to_csv(csv_path, index=False)
+    log.info(f"  Saved selection table CSV: {csv_path}")
+
+    fig_h = 0.45 * (len(rows) + 1.5)
+    fig, ax = plt.subplots(figsize=(13, max(fig_h, 3)))
+    ax.axis("off")
+    tbl = ax.table(
+        cellText=df.values,
+        colLabels=df.columns,
+        cellLoc="center",
+        loc="center",
+        colWidths=[0.12, 0.38, 0.32, 0.12],
+    )
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(9)
+    tbl.scale(1, 1.6)
+    for col_idx in range(len(df.columns)):
+        tbl[(0, col_idx)].set_facecolor("#2d6a2d")
+        tbl[(0, col_idx)].set_text_props(color="white", fontweight="bold")
+    for row_idx in range(1, len(rows) + 1):
+        face_color = "#f0f7f0" if row_idx % 2 == 0 else "white"
+        for col_idx in range(len(df.columns)):
+            tbl[(row_idx, col_idx)].set_facecolor(face_color)
+    ax.set_title("Stage 2v2 Per-Crop Feature Selection", fontsize=12, fontweight="bold", pad=10)
+    plt.tight_layout()
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    log.info(f"  Saved selection table PNG: {save_path}")
+
+
+def save_results_v2(results_per_crop: dict, band_name_to_idx: dict, per_crop_json=None, exp_json=None, exp_bands=None) -> None:
+    per_crop_path = per_crop_json or STAGE2V3_PER_CROP_JSON
+    exp_json_path = exp_json or STAGE3_EXP_C_V2_JSON
+    exp_bands_path = exp_bands or STAGE3_EXP_C_V2_BANDS
+    os.makedirs(PROCESSED_DIR, exist_ok=True)
+
+    union_dates = sorted({date for crop_id in KEEP_CLASSES for date in results_per_crop.get(crop_id, {}).get("dates", [])})
+    seen_bands, union_bands = set(), []
+    for crop_id in KEEP_CLASSES:
+        for band in results_per_crop.get(crop_id, {}).get("bands", []):
+            if band not in seen_bands:
+                seen_bands.add(band)
+                union_bands.append(band)
+
+    total_channels = len(union_dates) * len(union_bands)
+    per_crop_summary = {}
+    for crop_id in KEEP_CLASSES:
+        result = results_per_crop.get(crop_id, {})
+        per_crop_summary[str(crop_id)] = {
+            "crop_name": CDL_CLASS_NAMES[crop_id],
+            "dates": result.get("dates", []),
+            "bands": result.get("bands", []),
+            "k_dates": result.get("k_dates", 0),
+            "k_bands": result.get("k_bands", 0),
+            "best_iou_after_dates": result.get("best_iou_after_dates", 0.0),
+            "best_iou_after_bands": result.get("best_iou_after_bands", 0.0),
+            "fallback_dates": result.get("fallback_dates", False),
+            "fallback_bands": result.get("fallback_bands", False),
+            "mlflow_run_id": result.get("mlflow_run_id", ""),
+        }
+
+    with open(per_crop_path, "w") as f:
+        json.dump(per_crop_summary, f, indent=2)
+    log.info(f"Saved: {per_crop_path}")
+
+    with open(exp_json_path, "w") as f:
+        json.dump(
+            {
+                "union_dates": union_dates,
+                "union_bands": union_bands,
+                "total_channels": total_channels,
+                "per_crop": per_crop_summary,
+            },
+            f,
+            indent=2,
+        )
+    log.info(f"Saved: {exp_json_path}")
+
+    band_lines = []
+    for date in union_dates:
+        for band in union_bands:
+            key = f"{band}_{date}"
+            if key in band_name_to_idx:
+                band_lines.append(key)
+    with open(exp_bands_path, "w") as f:
+        f.write("\n".join(band_lines))
+    log.info(f"Saved: {exp_bands_path}  ({len(band_lines)} channel entries)")
+
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    table_path = FIGURES_DIR / "stage2v2_selection_table.png"
+    plot_selection_table(results_per_crop, table_path)
+    try:
+        mlflow.log_metrics(
+            {
+                "n_union_dates": len(union_dates),
+                "n_union_bands": len(union_bands),
+                "total_channels": total_channels,
+            }
+        )
+        mlflow.log_artifact(str(table_path))
+        mlflow.log_artifact(str(table_path.with_suffix(".csv")))
+    except Exception:
+        pass
+
+
 def save_exp_d_bands(date_candidates_per_crop: dict, band_candidates_per_crop: dict, band_name_to_idx: dict, data_dir=None) -> None:
     d_json = STAGE3_EXP_D_JSON if not data_dir else pathlib.Path(data_dir) / "stage3_exp_d.json"
     d_bands = STAGE3_EXP_D_BANDS if not data_dir else pathlib.Path(data_dir) / "stage3_exp_d_bands.txt"
@@ -481,7 +650,76 @@ def save_exp_d_bands(date_candidates_per_crop: dict, band_candidates_per_crop: d
         f.write("\n".join(band_lines))
 
 
+def run_project_v2() -> None:
+    from datetime import date as _date
+
+    if not STAGE3_EXP_C_V2_BANDS.exists():
+        raise FileNotFoundError(
+            f"Stage 2v2 output not found: {STAGE3_EXP_C_V2_BANDS}\n"
+            "Run Stage 2v2 first:  python feature_analysis_v2.py --stage 2"
+        )
+
+    with open(STAGE3_EXP_C_V2_BANDS) as f:
+        selected_bands = [line.strip() for line in f if line.strip()]
+    if not selected_bands:
+        raise ValueError(f"{STAGE3_EXP_C_V2_BANDS} is empty — re-run Stage 2v2.")
+
+    band_mmdd = []
+    for entry in selected_bands:
+        match = re.match(r"(.+)_(\d{4})(\d{2})(\d{2})$", entry)
+        if match:
+            band_mmdd.append((match.group(1), match.group(3) + match.group(4)))
+
+    projected = {}
+    for year in list(dict.fromkeys(list(TRAIN_YEARS) + [TEST_YEAR])):
+        year_files = _glob_s2_year(year)
+        if not year_files:
+            log.warning(f"  {year}: no S2 files found — skipping")
+            continue
+        year_dates = []
+        for path in year_files:
+            match = re.search(r"_(\d{4}_\d{2}_\d{2})(_processed)?\.tif$", pathlib.Path(path).name)
+            if match:
+                year_dates.append(match.group(1).replace("_", ""))
+        year_dates = sorted(set(year_dates))
+
+        year_bands = []
+        for band, mmdd in band_mmdd:
+            month, day = int(mmdd[:2]), int(mmdd[2:])
+            try:
+                target = _date(int(year), month, day)
+            except ValueError:
+                target = _date(int(year), month, min(day, 28))
+            target_doy = target.timetuple().tm_yday
+
+            best_date, best_dist = None, 999
+            for yyyymmdd in year_dates:
+                d = _date(int(yyyymmdd[:4]), int(yyyymmdd[4:6]), int(yyyymmdd[6:8]))
+                dist = abs(d.timetuple().tm_yday - target_doy)
+                if dist < best_dist:
+                    best_dist, best_date = dist, yyyymmdd
+            year_bands.append(f"{band}_{best_date}")
+        projected[year] = year_bands
+
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    with open(STAGE3_EXP_C_V2_BANDS_PROJECTED, "w") as f:
+        json.dump(projected, f, indent=2)
+
+    mlflow_setup()
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    with mlflow.start_run(run_name=f"stage2v3_project_{ts}"):
+        mlflow.set_tag("stage", "project_v2")
+        for year, bands in projected.items():
+            mlflow.log_param(f"n_bands_{year}", len(bands))
+            mlflow.set_tag(f"bands_{year}", str(bands))
+        mlflow.log_artifact(str(STAGE3_EXP_C_V2_BANDS_PROJECTED))
+        mlflow.log_artifact(str(STAGE3_EXP_C_V2_BANDS))
+
+
 from crop_mapping_pipeline.stages.selections.feature_analysis_v2.stage1.v3 import run_stage1v3
+from crop_mapping_pipeline.stages.selections.feature_analysis_v2.stage2.v2 import run_stage2v2
+from crop_mapping_pipeline.stages.selections.feature_analysis_v2.stage2.v2_rf import run_stage2v2_rf
+from crop_mapping_pipeline.stages.selections.feature_analysis_v2.stage2.v3 import run_stage2v3
 from crop_mapping_pipeline.stages.selections.gsi_direct import run_gsi_direct
 from crop_mapping_pipeline.stages.selections.rf_direct import run_rf_direct
 from crop_mapping_pipeline.stages.selections.single_date_gsi import run_single_date_gsi
@@ -498,16 +736,18 @@ _DOMAIN_SCOPED_SELECTORS = {"single_date_gsi", "single_date_rf", "naive_mt_gsi",
 
 
 def main(force: bool = False, data_dir: str = None, output_dir: str = None,
-         stage: str = "all", selector: str = "gsi_direct",
-         top_k_values: list[int] | None = None,
+         stage: str = "all", selector: str = "cnn",
+         mlflow_exp: str | None = None, top_k_values: list[int] | None = None,
          percentile_values: list[float] | None = None,
          score_threshold: float | None = None) -> None:
     global _MLFLOW_EXPERIMENT_OVERRIDE, KEEP_CLASSES, CDL_CLASS_NAMES
-    _MLFLOW_EXPERIMENT_OVERRIDE = None
+    if mlflow_exp == "v3":
+        _MLFLOW_EXPERIMENT_OVERRIDE = MLFLOW_EXPERIMENT_TRAIN_V3
+    else:
+        _MLFLOW_EXPERIMENT_OVERRIDE = None
 
     configure_data_dir(data_dir)
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-    log.info(f"Feature analysis — stage={stage}, selector={selector}")
 
     if stage in ("1", "all"):
         if not force and STAGE1V3_CANDIDATES_JSON.exists():
@@ -518,8 +758,64 @@ def main(force: bool = False, data_dir: str = None, output_dir: str = None,
             years_data = get_stage1_inputs()
             run_stage1v3(years_data, data_dir=data_dir)
             log.info("Stage 1v3 complete.")
-        if stage in ("1", "all"):
+        if stage == "1":
             return
+
+    if stage in ("2", "all"):
+        output_check = get_stage2_output_path(selector)
+        if not force and output_check.exists():
+            log.info(f"Stage 2v2-{selector.upper()} output already exists: {output_check}")
+            log.info("Use --force to re-run.")
+            if stage == "2":
+                return
+        else:
+            date_candidates_per_crop, band_candidates_per_crop, all_dates = load_stage1_candidates()
+            _s2_year, s2_files, cdl_path = get_train_year_inputs()
+            _all_bandnames, band_name_to_idx = build_band_name_to_idx(s2_files)
+            log.info(f"Device: {device_label()}  selector={selector}")
+            stage2_fn = run_stage2v2_rf if selector == "rf" else run_stage2v2
+            stage2_fn(
+                s2_paths=s2_files,
+                cdl_path=cdl_path,
+                date_candidates_per_crop=date_candidates_per_crop,
+                band_candidates_per_crop=band_candidates_per_crop,
+                band_name_to_idx=band_name_to_idx,
+                all_dates=all_dates,
+                data_dir=data_dir,
+            )
+            log.info(f"Stage 2v2-{selector.upper()} complete.")
+        if stage == "2":
+            return
+
+    if stage in ("2v3", "all"):
+        if not force and STAGE2V3_SWEEP_PER_CROP_JSON.exists():
+            log.info(f"Stage 2v3 sweep output already exists: {STAGE2V3_SWEEP_PER_CROP_JSON}")
+            log.info("Use --force to re-run.")
+            if stage == "2v3":
+                return
+        else:
+            date_candidates_per_crop, band_candidates_per_crop, all_dates = load_stage1_candidates()
+            _s2_year, s2_files, cdl_path = get_train_year_inputs()
+            _all_bandnames, band_name_to_idx = build_band_name_to_idx(s2_files)
+            log.info("Running Stage 2v3 incremental top-K enumeration (no training)")
+            run_stage2v3(
+                date_candidates_per_crop=date_candidates_per_crop,
+                band_candidates_per_crop=band_candidates_per_crop,
+                band_name_to_idx=band_name_to_idx,
+                data_dir=data_dir,
+            )
+            log.info("Stage 2v3 sweep complete.")
+        if stage == "2v3":
+            return
+
+    if stage == "project":
+        if not force and STAGE3_EXP_C_V2_BANDS_PROJECTED.exists():
+            log.info(f"Projected bands already exist: {STAGE3_EXP_C_V2_BANDS_PROJECTED}")
+            log.info("Use --force to re-run.")
+            return
+        run_project_v2()
+        log.info("Band projection complete.")
+        return
 
     if stage == "select":
         if selector in _DOMAIN_SCOPED_SELECTORS:
@@ -589,23 +885,22 @@ def main(force: bool = False, data_dir: str = None, output_dir: str = None,
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Feature analysis v2: Stage 1v3 candidates + direct selection")
+    parser = argparse.ArgumentParser(description="Feature analysis v2: Stage 1v3 + Stage 2v2/v3")
     parser.add_argument(
         "--stage",
-        choices=["1", "all", "select"],
+        choices=["1", "2", "2v3", "all", "project", "select"],
         default="all",
         help=(
-            "'1'/'all' run Stage 1v3 GSI candidate generation. "
             "'select' runs a single-stage selector: gsi_direct/rf_direct (full year, all dates) "
             "or single_date_gsi/single_date_rf/naive_mt_gsi/naive_mt_rf (domain-scoped)."
         ),
     )
     parser.add_argument(
         "--selector",
-        choices=["gsi_direct", "rf_direct",
+        choices=["cnn", "rf", "gsi_direct", "rf_direct",
                  "single_date_gsi", "single_date_rf", "naive_mt_gsi", "naive_mt_rf"],
-        default="gsi_direct",
-        help="Selector for --stage select.",
+        default="cnn",
+        help="Selector: cnn/rf for Stage 2v2; others for --stage select.",
     )
     parser.add_argument("--force", "--overwrite", dest="force", action="store_true",
                         help="Re-run even if outputs exist")
@@ -622,6 +917,8 @@ def build_parser() -> argparse.ArgumentParser:
                              "Mutually exclusive with --top-k and --percentile.")
     parser.add_argument("--data-dir", type=str, default=None, help="Override processed data directory (S2/CDL input)")
     parser.add_argument("--output-dir", type=str, default=None, help="Directory for selection output JSONs (--stage select only); defaults to --data-dir")
+    parser.add_argument("--mlflow-exp", choices=["v3"], default=None,
+                        help="Route MLflow runs to a specific experiment. 'v3' → cropmap_segmentation_s2_v3.")
     return parser
 
 
@@ -645,7 +942,7 @@ def cli(argv=None) -> None:
     configure_logging()
     main(force=args.force, data_dir=args.data_dir, output_dir=args.output_dir,
          stage=args.stage, selector=args.selector,
-         top_k_values=args.top_k,
+         mlflow_exp=args.mlflow_exp, top_k_values=args.top_k,
          percentile_values=args.percentile,
          score_threshold=args.score_threshold)
 

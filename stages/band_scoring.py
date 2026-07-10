@@ -114,7 +114,6 @@ def _glob_s2_train() -> list[str]:
 
 
 def build_band_name_to_idx(s2_files: list[str]) -> tuple[list[str], dict[str, int]]:
-    log.info(f"Building band name index from {len(s2_files)} S2 files")
     all_bandnames = []
     for s2_path in s2_files:
         fname = os.path.basename(s2_path)
@@ -426,6 +425,238 @@ def plot_gsi_heatmaps(gsi_df: pd.DataFrame, all_dates: list, save_dir: pathlib.P
     saved.append(grid_path)
     log.info(f"  Saved {len(saved)} GSI heatmap(s) to {save_dir}")
     return saved
+
+
+def plot_selection_table(results_per_crop: dict, save_path: pathlib.Path) -> None:
+    rows = []
+    for crop_id in KEEP_CLASSES:
+        result = results_per_crop.get(crop_id, {})
+        rows.append(
+            {
+                "Crop": CDL_CLASS_NAMES.get(crop_id, f"cls{crop_id}"),
+                "Key Period": ", ".join(fmt_date(date) for date in result.get("dates", [])) or "—",
+                "Selected Bands": ", ".join(result.get("bands", [])) or "—",
+                "IoU (bands)": f"{result.get('best_iou_after_bands', 0.0):.4f}",
+            }
+        )
+    df = pd.DataFrame(rows)
+    csv_path = save_path.with_suffix(".csv")
+    df.to_csv(csv_path, index=False)
+    log.info(f"  Saved selection table CSV: {csv_path}")
+
+    fig_h = 0.45 * (len(rows) + 1.5)
+    fig, ax = plt.subplots(figsize=(13, max(fig_h, 3)))
+    ax.axis("off")
+    tbl = ax.table(
+        cellText=df.values,
+        colLabels=df.columns,
+        cellLoc="center",
+        loc="center",
+        colWidths=[0.12, 0.38, 0.32, 0.12],
+    )
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(9)
+    tbl.scale(1, 1.6)
+    for col_idx in range(len(df.columns)):
+        tbl[(0, col_idx)].set_facecolor("#2d6a2d")
+        tbl[(0, col_idx)].set_text_props(color="white", fontweight="bold")
+    for row_idx in range(1, len(rows) + 1):
+        face_color = "#f0f7f0" if row_idx % 2 == 0 else "white"
+        for col_idx in range(len(df.columns)):
+            tbl[(row_idx, col_idx)].set_facecolor(face_color)
+    ax.set_title("Stage 2v2 Per-Crop Feature Selection", fontsize=12, fontweight="bold", pad=10)
+    plt.tight_layout()
+    fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    log.info(f"  Saved selection table PNG: {save_path}")
+
+
+def _save_results_v2(results_per_crop: dict, band_name_to_idx: dict, per_crop_json=None, exp_json=None, exp_bands=None) -> None:  # legacy, unused
+    per_crop_path = per_crop_json or STAGE2V3_PER_CROP_JSON
+    exp_json_path = exp_json or STAGE3_EXP_C_V2_JSON
+    exp_bands_path = exp_bands or STAGE3_EXP_C_V2_BANDS
+    os.makedirs(PROCESSED_DIR, exist_ok=True)
+
+    union_dates = sorted({date for crop_id in KEEP_CLASSES for date in results_per_crop.get(crop_id, {}).get("dates", [])})
+    seen_bands, union_bands = set(), []
+    for crop_id in KEEP_CLASSES:
+        for band in results_per_crop.get(crop_id, {}).get("bands", []):
+            if band not in seen_bands:
+                seen_bands.add(band)
+                union_bands.append(band)
+
+    total_channels = len(union_dates) * len(union_bands)
+    per_crop_summary = {}
+    for crop_id in KEEP_CLASSES:
+        result = results_per_crop.get(crop_id, {})
+        per_crop_summary[str(crop_id)] = {
+            "crop_name": CDL_CLASS_NAMES[crop_id],
+            "dates": result.get("dates", []),
+            "bands": result.get("bands", []),
+            "k_dates": result.get("k_dates", 0),
+            "k_bands": result.get("k_bands", 0),
+            "best_iou_after_dates": result.get("best_iou_after_dates", 0.0),
+            "best_iou_after_bands": result.get("best_iou_after_bands", 0.0),
+            "fallback_dates": result.get("fallback_dates", False),
+            "fallback_bands": result.get("fallback_bands", False),
+            "mlflow_run_id": result.get("mlflow_run_id", ""),
+        }
+
+    with open(per_crop_path, "w") as f:
+        json.dump(per_crop_summary, f, indent=2)
+    log.info(f"Saved: {per_crop_path}")
+
+    with open(exp_json_path, "w") as f:
+        json.dump(
+            {
+                "union_dates": union_dates,
+                "union_bands": union_bands,
+                "total_channels": total_channels,
+                "per_crop": per_crop_summary,
+            },
+            f,
+            indent=2,
+        )
+    log.info(f"Saved: {exp_json_path}")
+
+    band_lines = []
+    for date in union_dates:
+        for band in union_bands:
+            key = f"{band}_{date}"
+            if key in band_name_to_idx:
+                band_lines.append(key)
+    with open(exp_bands_path, "w") as f:
+        f.write("\n".join(band_lines))
+    log.info(f"Saved: {exp_bands_path}  ({len(band_lines)} channel entries)")
+
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    table_path = FIGURES_DIR / "stage2v2_selection_table.png"
+    plot_selection_table(results_per_crop, table_path)
+    try:
+        mlflow.log_metrics(
+            {
+                "n_union_dates": len(union_dates),
+                "n_union_bands": len(union_bands),
+                "total_channels": total_channels,
+            }
+        )
+        mlflow.log_artifact(str(table_path))
+        mlflow.log_artifact(str(table_path.with_suffix(".csv")))
+    except Exception:
+        pass
+
+
+def _save_exp_d_bands(  # legacy, unused
+    date_candidates_per_crop: dict, band_candidates_per_crop: dict, band_name_to_idx: dict, data_dir=None) -> None:
+    d_json = STAGE3_EXP_D_JSON if not data_dir else pathlib.Path(data_dir) / "stage3_exp_d.json"
+    d_bands = STAGE3_EXP_D_BANDS if not data_dir else pathlib.Path(data_dir) / "stage3_exp_d_bands.txt"
+
+    seen_dates, union_dates = set(), []
+    for crop_id in KEEP_CLASSES:
+        for date in date_candidates_per_crop.get(str(crop_id), []):
+            if date not in seen_dates:
+                seen_dates.add(date)
+                union_dates.append(date)
+
+    seen_bands, union_bands = set(), []
+    for crop_id in KEEP_CLASSES:
+        for band in band_candidates_per_crop.get(str(crop_id), []):
+            if band not in seen_bands:
+                seen_bands.add(band)
+                union_bands.append(band)
+
+    with open(d_json, "w") as f:
+        json.dump(
+            {
+                "union_dates": union_dates,
+                "union_bands": union_bands,
+                "total_channels": len(union_dates) * len(union_bands),
+                "per_crop": {
+                    str(crop_id): {
+                        "crop_name": CDL_CLASS_NAMES[crop_id],
+                        "top_dates": date_candidates_per_crop.get(str(crop_id), []),
+                        "top_bands": band_candidates_per_crop.get(str(crop_id), []),
+                    }
+                    for crop_id in KEEP_CLASSES
+                },
+            },
+            f,
+            indent=2,
+        )
+    band_lines = []
+    for date in union_dates:
+        for band in union_bands:
+            key = f"{band}_{date}"
+            if key in band_name_to_idx:
+                band_lines.append(key)
+    with open(d_bands, "w") as f:
+        f.write("\n".join(band_lines))
+
+
+def _run_project_v2() -> None:  # legacy, unused
+    from datetime import date as _date
+
+    if not STAGE3_EXP_C_V2_BANDS.exists():
+        raise FileNotFoundError(
+            f"Stage 2v2 output not found: {STAGE3_EXP_C_V2_BANDS}\n"
+            "Run Stage 2v2 first:  python feature_analysis_v2.py --stage 2"
+        )
+
+    with open(STAGE3_EXP_C_V2_BANDS) as f:
+        selected_bands = [line.strip() for line in f if line.strip()]
+    if not selected_bands:
+        raise ValueError(f"{STAGE3_EXP_C_V2_BANDS} is empty — re-run Stage 2v2.")
+
+    band_mmdd = []
+    for entry in selected_bands:
+        match = re.match(r"(.+)_(\d{4})(\d{2})(\d{2})$", entry)
+        if match:
+            band_mmdd.append((match.group(1), match.group(3) + match.group(4)))
+
+    projected = {}
+    for year in list(dict.fromkeys(list(TRAIN_YEARS) + [TEST_YEAR])):
+        year_files = _glob_s2_year(year)
+        if not year_files:
+            log.warning(f"  {year}: no S2 files found — skipping")
+            continue
+        year_dates = []
+        for path in year_files:
+            match = re.search(r"_(\d{4}_\d{2}_\d{2})(_processed)?\.tif$", pathlib.Path(path).name)
+            if match:
+                year_dates.append(match.group(1).replace("_", ""))
+        year_dates = sorted(set(year_dates))
+
+        year_bands = []
+        for band, mmdd in band_mmdd:
+            month, day = int(mmdd[:2]), int(mmdd[2:])
+            try:
+                target = _date(int(year), month, day)
+            except ValueError:
+                target = _date(int(year), month, min(day, 28))
+            target_doy = target.timetuple().tm_yday
+
+            best_date, best_dist = None, 999
+            for yyyymmdd in year_dates:
+                d = _date(int(yyyymmdd[:4]), int(yyyymmdd[4:6]), int(yyyymmdd[6:8]))
+                dist = abs(d.timetuple().tm_yday - target_doy)
+                if dist < best_dist:
+                    best_dist, best_date = dist, yyyymmdd
+            year_bands.append(f"{band}_{best_date}")
+        projected[year] = year_bands
+
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    with open(STAGE3_EXP_C_V2_BANDS_PROJECTED, "w") as f:
+        json.dump(projected, f, indent=2)
+
+    mlflow_setup()
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    with mlflow.start_run(run_name=f"stage2v3_project_{ts}"):
+        mlflow.set_tag("stage", "project_v2")
+        for year, bands in projected.items():
+            mlflow.log_param(f"n_bands_{year}", len(bands))
+            mlflow.set_tag(f"bands_{year}", str(bands))
+        mlflow.log_artifact(str(STAGE3_EXP_C_V2_BANDS_PROJECTED))
+        mlflow.log_artifact(str(STAGE3_EXP_C_V2_BANDS))
 
 
 _DIRECT_OUTPUT_MAP = {
