@@ -90,7 +90,7 @@ def save_selection(
     json_path: Path,
     txt_path: Path,
     selector: str,
-    top_k: int,
+    top_k: int | None = None,
     meta: dict | None = None,
     percentile: float | None = None,
     score_threshold: float | None = None,

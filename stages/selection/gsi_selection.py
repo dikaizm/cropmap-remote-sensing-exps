@@ -17,7 +17,7 @@ import pandas as pd
 
 from crop_mapping_pipeline.config import (
     KEEP_CLASSES, CDL_CLASS_NAMES, S2_BAND_NAMES,
-    SELECT_TOP_K_PER_CROP, SELECT_GSI_DIRECT_JSON, SELECT_GSI_DIRECT_BANDS,
+    SELECT_GSI_DIRECT_JSON, SELECT_GSI_DIRECT_BANDS,
 )
 from crop_mapping_pipeline.stages.selection._utils import (
     build_channel_names, sample_pixels, save_selection, log_selection_run, save_per_class_table,
@@ -68,11 +68,9 @@ def _gsi_per_crop(df: pd.DataFrame, bandnames: list[str]) -> dict[int, pd.Series
 
 def run_gsi_direct(
     years_data: list[tuple[str, list[str], str]],
-    top_k: int = SELECT_TOP_K_PER_CROP,
     data_dir: str | None = None,
     out_stem: str | None = None,
-    percentile: float | None = None,
-    score_threshold: float | None = None,
+    score_threshold: float = 0.5,
 ) -> list[str]:
     """
     years_data: [(year, s2_paths, cdl_path), ...]
@@ -81,9 +79,7 @@ def run_gsi_direct(
     """
     t_start = time.time()
     log.info("GSI-direct: scoring all channels, no prefilter")
-    _mode_str = (f"score_threshold={score_threshold:g}" if score_threshold is not None
-                 else f"percentile={percentile:g}" if percentile is not None
-                 else f"top_k={top_k}")
+    _mode_str = f"score_threshold={score_threshold:g}"
     log.info(f"  years={[yr for yr, _, _ in years_data]}  mode={_mode_str}")
 
     # ── Per-year GSI ──────────────────────────────────────────────────────────
@@ -154,52 +150,33 @@ def run_gsi_direct(
 
         adjusted_per_crop[crop_id] = adjusted.fillna(0.0)
 
-    # ── Selection: score_threshold (Wei et al. 2023) / pooled-percentile / top-K ─
+    # ── Selection: per-crop normalized score threshold (Wei et al. 2023) ─
     per_crop: dict[int, list[str]] = {}
     thr: float | None = None
-    if score_threshold is not None:
-        # Per-crop min-max normalize GSI scores to [0,1]; retain channels >= score_threshold.
-        # Follows Wei et al. (2023): "features >= 0.5 have yielded quite results."
-        log.info(f"  GSI per-crop normalized score threshold = {score_threshold}")
-        for crop_id in KEEP_CLASSES:
-            s = adjusted_per_crop[crop_id]
-            s_min, s_max = float(s.min()), float(s.max())
-            if s_max > s_min:
-                s_norm = (s - s_min) / (s_max - s_min)
-            else:
-                s_norm = pd.Series(0.0, index=s.index)
-            sel = s_norm[s_norm >= score_threshold].sort_values(ascending=False).index.tolist()
-            per_crop[crop_id] = sel
-            log.info(f"  {CDL_CLASS_NAMES[crop_id]:20s}: {len(sel)} ch (norm≥{score_threshold}, top-3 {sel[:3]})")
-    elif percentile is not None:
-        # Shared absolute GSI threshold = Pxx of the POOLED per-crop GSI scores.
-        pooled = np.concatenate([s.values for s in adjusted_per_crop.values()])
-        thr    = float(np.percentile(pooled, percentile))
-        log.info(f"  GSI pooled P{percentile:g} threshold = {thr:.4f}")
-        for crop_id in KEEP_CLASSES:
-            s = adjusted_per_crop[crop_id]
-            sel = s[s >= thr].sort_values(ascending=False).index.tolist()
-            per_crop[crop_id] = sel
-            log.info(f"  {CDL_CLASS_NAMES[crop_id]:20s}: {len(sel)} ch (top-3 {sel[:3]})")
-    else:
-        for crop_id in KEEP_CLASSES:
-            top_channels = adjusted_per_crop[crop_id].nlargest(top_k).index.tolist()
-            per_crop[crop_id] = top_channels
-            log.info(f"  {CDL_CLASS_NAMES[crop_id]:20s}: top-3 = {top_channels[:3]}")
+
+    # Per-crop min-max normalize GSI scores to [0,1]; retain channels >= score_threshold.
+    # Follows Wei et al. (2023): "features >= 0.5 have yielded quite results."
+    log.info(f"  GSI per-crop normalized score threshold = {score_threshold}")
+    for crop_id in KEEP_CLASSES:
+        s = adjusted_per_crop[crop_id]
+        s_min, s_max = float(s.min()), float(s.max())
+        if s_max > s_min:
+            s_norm = (s - s_min) / (s_max - s_min)
+        else:
+            s_norm = pd.Series(0.0, index=s.index)
+        sel = s_norm[s_norm >= score_threshold].sort_values(ascending=False).index.tolist()
+        per_crop[crop_id] = sel
+        log.info(f"  {CDL_CLASS_NAMES[crop_id]:20s}: {len(sel)} ch (norm≥{score_threshold}, top-3 {sel[:3]})")
 
     # ── Save ──────────────────────────────────────────────────────────────────
-    stem = out_stem or (
-        f"select_gsi_direct_s{score_threshold:g}" if score_threshold is not None
-        else f"select_gsi_direct_p{percentile:g}" if percentile is not None
-        else f"select_gsi_direct_k{top_k}"
-    )
+    stem = out_stem or f"select_gsi_direct_s{score_threshold:g}"
     base_dir  = Path(data_dir) if data_dir else SELECT_GSI_DIRECT_JSON.parent
     json_path = base_dir / f"{stem}.json"
     txt_path  = base_dir / f"{stem}_bands.txt"
 
     union = save_selection(
         per_crop, json_path, txt_path,
-        selector="gsi_direct", top_k=top_k, percentile=percentile,
+        selector="gsi_direct",
         score_threshold=score_threshold,
         meta={"years": [yr for yr, _, _ in years_data], "primary_year": primary_year,
               "n_primary_channels": len(primary_bandnames)},
@@ -218,12 +195,7 @@ def run_gsi_direct(
     # ── MLflow ────────────────────────────────────────────────────────────────
     duration_s = time.time() - t_start
     log.info(f"GSI-direct completed in {duration_s:.1f}s")
-    if score_threshold is not None:
-        sel_mode = "score_threshold"
-    elif percentile is not None:
-        sel_mode = "percentile"
-    else:
-        sel_mode = "top_k"
+    sel_mode = "score_threshold"
     log_selection_run(
         selector="gsi_direct",
         run_name_prefix="gsi_direct",
@@ -234,8 +206,6 @@ def run_gsi_direct(
         params={
             "selector":         "gsi_direct",
             "selection_mode":   sel_mode,
-            "top_k":            top_k,
-            "percentile":       percentile,
             "score_threshold":  score_threshold,
             "years":            str([yr for yr, _, _ in years_data]),
             "primary_year":     primary_year,

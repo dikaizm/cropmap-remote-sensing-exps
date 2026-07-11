@@ -1,8 +1,9 @@
-"""Band scoring — per-crop GSI and RF importance scoring for band selection comparison.
+"""Feature selection orchestrator — GSI / RF importance, normalized-score threshold.
 
-Produces:
-  select_gsi_direct_k*.json — joint spectral-temporal top-K by GSI (used by gsi experiment)
-  select_rf_direct_k*.json  — joint spectral-temporal top-K by RF importance (used by rf experiment)
+Runs one direct selector and writes its union channel set:
+  select_gsi_direct_s{T}.json — per-crop GSI, normalized score >= T (gsi scenario)
+  select_rf_direct_s{T}.json  — per-crop RF importance, normalized score >= T (rf scenario)
+Default T = 0.5 (Wei et al. 2023).
 """
 
 import argparse
@@ -49,7 +50,6 @@ from crop_mapping_pipeline.config import (
     SELECT_GSI_DIRECT_BANDS,
     SELECT_RF_DIRECT_JSON,
     SELECT_RF_DIRECT_BANDS,
-    SELECT_TOP_K_PER_CROP,
     TEST_YEAR,
     TOP_BANDS_PER_CROP,
     TOP_DATES_PER_CROP,
@@ -122,60 +122,46 @@ _MLFLOW_EXPERIMENT_OVERRIDE: str | None = None
 
 
 def main(force: bool = False, data_dir: str = None, output_dir: str = None,
-         mode: str = "select", selector: str = "gsi_direct",
-         top_k_values: list[int] | None = None) -> None:
+         selector: str = "gsi_direct", score_threshold: float = 0.5) -> None:
     global _MLFLOW_EXPERIMENT_OVERRIDE, KEEP_CLASSES, CDL_CLASS_NAMES
     _MLFLOW_EXPERIMENT_OVERRIDE = None
 
     configure_data_dir(data_dir)
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-    if mode == "select":
-        from crop_mapping_pipeline.stages.selection.gsi_selection import run_gsi_direct
-        from crop_mapping_pipeline.stages.selection.feature_importance_selection import run_rf_direct
-        if selector not in _DIRECT_OUTPUT_MAP:
-            raise ValueError(
-                f"--selector must be 'gsi_direct' or 'rf_direct', got {selector!r}"
-            )
-        ks = top_k_values or [SELECT_TOP_K_PER_CROP]
-        fn = run_gsi_direct if selector == "gsi_direct" else run_rf_direct
-        years_data = get_stage1_inputs()
-        out_base = Path(output_dir) if output_dir else (Path(data_dir) if data_dir else _DIRECT_OUTPUT_MAP[selector][0].parent)
-        out_base.mkdir(parents=True, exist_ok=True)
-        for k in ks:
-            stem     = f"select_{selector}_k{k}"
-            json_out = out_base / f"{stem}.json"
-            if not force and json_out.exists():
-                log.info(f"  k={k}: output exists ({json_out.name}) — skipping (--force to re-run)")
-                continue
-            log.info(f"  Running {selector} top_k={k} ...")
-            fn(years_data, top_k=k, data_dir=str(out_base), out_stem=stem)
-            log.info(f"  k={k} complete → {json_out}")
-        log.info(f"Direct selection ({selector}) sweep complete: k={ks}")
-        return
+    from crop_mapping_pipeline.stages.selection.gsi_selection import run_gsi_direct
+    from crop_mapping_pipeline.stages.selection.feature_importance_selection import run_rf_direct
+    if selector not in _DIRECT_OUTPUT_MAP:
+        raise ValueError(f"--selector must be 'gsi_direct' or 'rf_direct', got {selector!r}")
 
-    log.info("Band scoring complete.")
+    fn = run_gsi_direct if selector == "gsi_direct" else run_rf_direct
+    years_data = get_stage1_inputs()
+    out_base = Path(output_dir) if output_dir else (Path(data_dir) if data_dir else _DIRECT_OUTPUT_MAP[selector][0].parent)
+    out_base.mkdir(parents=True, exist_ok=True)
+
+    stem     = f"select_{selector}_s{score_threshold:g}"
+    json_out = out_base / f"{stem}.json"
+    if not force and json_out.exists():
+        log.info(f"  Output exists ({json_out.name}) — skipping (--force to re-run)")
+        return
+    log.info(f"  Running {selector} score_threshold={score_threshold} ...")
+    fn(years_data, score_threshold=score_threshold, data_dir=str(out_base), out_stem=stem)
+    log.info(f"Direct selection ({selector}) complete → {json_out}")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Band scoring: GSI and RF importance for band selection comparison")
     parser.add_argument(
-        "--mode",
-        choices=["gsi", "select"],
-        default="gsi",
-        help="'gsi' runs per-crop GSI scoring; 'select' runs joint spectral-temporal direct selection.",
-    )
-    parser.add_argument(
         "--selector",
         choices=["gsi_direct", "rf_direct"],
         default="gsi_direct",
-        help="Direct selector for --mode select.",
+        help="Direct selector: GSI or RF importance.",
     )
     parser.add_argument("--force", action="store_true", help="Re-run even if outputs exist")
-    parser.add_argument("--top-k", type=int, nargs="+", default=None, metavar="K",
-                        help="Top-K per crop sweep (e.g. --top-k 5 10 15 20 30)")
+    parser.add_argument("--score-threshold", type=float, default=0.5, metavar="T",
+                        help="Per-crop normalized-score threshold (default: 0.5, Wei 2023)")
     parser.add_argument("--data-dir", type=str, default=None, help="Override processed data directory (S2/CDL input)")
-    parser.add_argument("--output-dir", type=str, default=None, help="Directory for selection output JSONs (--mode select only)")
+    parser.add_argument("--output-dir", type=str, default=None, help="Directory for selection output JSONs")
     return parser
 
 
@@ -195,7 +181,7 @@ def cli(argv=None) -> None:
     args = build_parser().parse_args(argv)
     configure_logging()
     main(force=args.force, data_dir=args.data_dir, output_dir=args.output_dir,
-         mode=args.mode, selector=args.selector, top_k_values=args.top_k)
+         selector=args.selector, score_threshold=args.score_threshold)
 
 
 if __name__ == "__main__":
