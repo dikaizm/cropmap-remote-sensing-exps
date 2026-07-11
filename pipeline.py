@@ -3,7 +3,7 @@ Pipeline orchestrator — runs all steps end-to-end.
 
 Steps:
   fetch    — download processed S2 + CDL from Google Drive
-  feature  — band scoring: GSI + RF importance (band_scoring.py)
+  feature  — feature selection: GSI + RF, normalized score >= 0.5
   train    — train segmentation models for band selection comparison (train_segmentation.py)
   all      — run fetch + feature + train in order
 
@@ -96,12 +96,22 @@ def run_fetch(force=False, data_dir=None, years=None, **_):
 
 
 def run_feature(force=False, data_dir=None):
-    """Band scoring — GSI and RF importance scoring."""
+    """Feature selection — GSI + RF, normalized-score threshold >= 0.5 (Wei 2023)."""
     log.info("=" * 60)
-    log.info("BAND SCORING — GSI and RF importance")
+    log.info("FEATURE SELECTION — GSI + RF (normalized score >= 0.5)")
     log.info("=" * 60)
-    from crop_mapping_pipeline.stages.selection.band_scoring import main as feature_main
-    feature_main(force=force, data_dir=data_dir, mode="gsi")
+    from crop_mapping_pipeline.stages.selection.band_scoring import (
+        configure_data_dir, get_stage1_inputs,
+    )
+    from crop_mapping_pipeline.stages.selection.gsi_selection import run_gsi_direct
+    from crop_mapping_pipeline.stages.selection.feature_importance_selection import run_rf_direct
+    from crop_mapping_pipeline.config import PROCESSED_DIR
+
+    configure_data_dir(data_dir)
+    years_data = get_stage1_inputs()
+    out_base   = data_dir or str(PROCESSED_DIR)
+    run_gsi_direct(years_data, score_threshold=0.5, data_dir=out_base, out_stem="select_gsi_direct_s0.5")
+    run_rf_direct(years_data,  score_threshold=0.5, data_dir=out_base, out_stem="select_rf_direct_s0.5")
 
 
 def run_train(force=False, data_dir=None):

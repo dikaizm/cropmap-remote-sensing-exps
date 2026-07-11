@@ -386,7 +386,6 @@ from crop_mapping_pipeline.stages.training.experiments import (
     build_local_band_map,
     build_single_date_indices,
     build_naive_multitemporal_indices,
-    build_naive_multitemporal_selected_indices,
     build_registry,
     expand_exp_keys,
 )

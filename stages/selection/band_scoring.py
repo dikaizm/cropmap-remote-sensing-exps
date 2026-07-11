@@ -1,7 +1,6 @@
 """Band scoring — per-crop GSI and RF importance scoring for band selection comparison.
 
 Produces:
-  gsi_candidates.json       — per-crop date/band ranked by GSI (used by single_date + naive_multitemporal)
   select_gsi_direct_k*.json — joint spectral-temporal top-K by GSI (used by gsi experiment)
   select_rf_direct_k*.json  — joint spectral-temporal top-K by RF importance (used by rf experiment)
 """
@@ -335,19 +334,6 @@ def fmt_date(date_str: str) -> str:
     except Exception:
         return date_str
 
-
-def load_gsi_candidates() -> tuple[dict, dict, list]:
-    if not os.path.exists(GSI_CANDIDATES_JSON):
-        raise FileNotFoundError(
-            f"GSI candidates not found: {GSI_CANDIDATES_JSON}\n"
-            "Run band scoring first:  python stages/band_scoring.py"
-        )
-    with open(GSI_CANDIDATES_JSON) as f:
-        payload = json.load(f)
-    log.info(f"Loaded GSI candidates from {GSI_CANDIDATES_JSON}")
-    return payload["date_candidates_per_crop"], payload["band_candidates_per_crop"], payload["all_dates"]
-
-
 _MLFLOW_EXPERIMENT_OVERRIDE: str | None = None
 
 
@@ -471,24 +457,13 @@ def plot_selection_table(results_per_crop: dict, save_path: pathlib.Path) -> Non
 
 
 def main(force: bool = False, data_dir: str = None, output_dir: str = None,
-         mode: str = "gsi", selector: str = "gsi_direct",
+         mode: str = "select", selector: str = "gsi_direct",
          top_k_values: list[int] | None = None) -> None:
     global _MLFLOW_EXPERIMENT_OVERRIDE, KEEP_CLASSES, CDL_CLASS_NAMES
     _MLFLOW_EXPERIMENT_OVERRIDE = None
 
     configure_data_dir(data_dir)
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-
-    if mode == "gsi":
-        from crop_mapping_pipeline.stages.selection.gsi_scoring import run_gsi_scoring
-        gsi_path = GSI_CANDIDATES_JSON if not data_dir else Path(data_dir) / "s2" / "2022" / "gsi_candidates.json"
-        if not force and gsi_path.exists():
-            log.info(f"GSI candidates already exist: {gsi_path}  (--force to re-run)")
-        else:
-            years_data = get_stage1_inputs()
-            run_gsi_scoring(years_data, data_dir=data_dir)
-            log.info("GSI scoring complete.")
-        return
 
     if mode == "select":
         from crop_mapping_pipeline.stages.selection.gsi_selection import run_gsi_direct

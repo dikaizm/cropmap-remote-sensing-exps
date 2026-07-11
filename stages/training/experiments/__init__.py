@@ -6,12 +6,10 @@ from crop_mapping_pipeline.stages.training.experiments.base import (
 )
 from crop_mapping_pipeline.stages.training.experiments.exp_a import (
     build_single_date_indices,
-    build_single_date_selected_indices,
     build_exp_A_indices,          # backwards-compat
 )
 from crop_mapping_pipeline.stages.training.experiments.exp_b import (
     build_naive_multitemporal_indices,
-    build_naive_multitemporal_selected_indices,
     build_exp_B_indices,          # backwards-compat
 )
 from crop_mapping_pipeline.stages.training.experiments.registry import (
@@ -24,10 +22,8 @@ __all__ = [
     "parse_date",
     "build_local_band_map",
     "build_single_date_indices",
-    "build_single_date_selected_indices",
     "build_exp_A_indices",
     "build_naive_multitemporal_indices",
-    "build_naive_multitemporal_selected_indices",
     "build_exp_B_indices",
     "ExperimentConfig",
     "build_registry",
