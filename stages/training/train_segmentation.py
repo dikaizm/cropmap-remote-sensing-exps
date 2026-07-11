@@ -391,7 +391,6 @@ from crop_mapping_pipeline.stages.training.experiments import (
     expand_exp_keys,
 )
 from crop_mapping_pipeline.stages.training.experiments.exp_select_direct import build_direct_indices
-from crop_mapping_pipeline.stages.selection.rf_band_only import run_rf_band_only, save_rf_band_json
 from crop_mapping_pipeline.stages.training.ndvi_disagreement_analysis import (
     run_ndvi_disagreement, score_patch_verdict, B4_IDX, B8_IDX,
 )
