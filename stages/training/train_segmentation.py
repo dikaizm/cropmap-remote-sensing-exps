@@ -69,7 +69,6 @@ from crop_mapping_pipeline.config import (
     BLOCK_SIZE, MIN_CLASS_FRAC,
     SCHED_POWER, WARMUP_EPOCHS, WARMUP_START_FACTOR,
     GDRIVE_OAUTH_TOKEN, GDRIVE_MODELS_FOLDER_ID,
-    SELECT_TOP_K_PER_CROP,
 )
 from crop_mapping_pipeline.utils.constants import USDA_CDL_COLORS
 from geoai.geoai.train import RasterPatchDataset, train_semantic_one_epoch
@@ -2655,9 +2654,7 @@ def main(
     phenol_dates=None,
     skip_viz=False,
     skip_ndvi=False,
-    top_k=None,
-    percentile=None,
-    score_threshold=None,
+    score_threshold=0.5,
     batch_size=None,
     epochs=None,
     no_preload=False,
@@ -2877,53 +2874,27 @@ def main(
         mt_base_idx, mt_base_names, phenol_map = nmt_base_idx, nmt_base_names, phenol_map_base
 
     def _find_direct_json(selector: str) -> Path:
-        """Return JSON path for a direct selector.
-
-        Score-threshold mode → select_{selector}_s{T}.json (Wei et al. 2023, no subset).
-        Percentile mode      → select_{selector}_p{P}.json (final selection, no subset).
-        Top-K mode           → select_{selector}_k{K}.json (falls back to largest k + subset).
-        """
+        """Return the selection JSON for a direct selector (per-crop normalized score >= T)."""
         base = Path(data_dir) if data_dir else SELECT_GSI_DIRECT_JSON.parent
-        if score_threshold is not None:
-            return base / f"select_{selector}_s{score_threshold:g}.json"
-        if percentile is not None:
-            return base / f"select_{selector}_p{percentile:g}.json"
-        if top_k:
-            exact = base / f"select_{selector}_k{top_k}.json"
-            if exact.exists():
-                return exact
-            candidates = sorted(base.glob(f"select_{selector}_k*.json"))
-            if candidates:
-                log.info(f"  {selector}: k={top_k} JSON not found, using {candidates[-1].name} with subset_k")
-                return candidates[-1]
-        return base / f"select_{selector}_k{SELECT_TOP_K_PER_CROP}.json"
-
-    # score_threshold and percentile modes: JSON union is already the final selection → no subset_k.
-    _subset = None if (score_threshold is not None or percentile is not None) else top_k
+        return base / f"select_{selector}_s{score_threshold:g}.json"
 
     gsi_idx = gsi_names = None
     if not exps or "gsi" in exps:
         gsi_json = _find_direct_json("gsi_direct")
         gsi_idx, gsi_names = build_direct_indices(
             gsi_json, mmdd_to_date, local_band_to_idx,
-            selector_name="gsi", subset_k=_subset,
+            selector_name="gsi", subset_k=None,
         )
-        _gsi_mode = (f"s={score_threshold:g}" if score_threshold is not None
-                     else f"P{percentile:g}" if percentile is not None
-                     else f"k={top_k or 'all'}")
-        log.info(f"gsi ({_gsi_mode}): {len(gsi_idx)} channels")
+        log.info(f"gsi (s={score_threshold:g}): {len(gsi_idx)} channels")
 
     rf_idx = rf_names = None
     if not exps or "rf" in exps:
         rf_json = _find_direct_json("rf_direct")
         rf_idx, rf_names = build_direct_indices(
             rf_json, mmdd_to_date, local_band_to_idx,
-            selector_name="rf", subset_k=_subset,
+            selector_name="rf", subset_k=None,
         )
-        _rf_mode = (f"s={score_threshold:g}" if score_threshold is not None
-                    else f"P{percentile:g}" if percentile is not None
-                    else f"k={top_k or 'all'}")
-        log.info(f"rf ({_rf_mode}): {len(rf_idx)} channels")
+        log.info(f"rf (s={score_threshold:g}): {len(rf_idx)} channels")
 
     # ── Class weights ──────────────────────────────────────────────────────
     cw_tensor, cw_counts = compute_class_weights(return_counts=True)
@@ -2980,12 +2951,11 @@ def main(
             f"({int(round((1-VAL_FRAC-TEST_FRAC)*100))}/{int(round(VAL_FRAC*100))}/{int(round(TEST_FRAC*100))}; "
             "block split groups whole grid cells per split to avoid patch-adjacency "
             "leakage). Compares band-selection "
-            "experiments (single-date / naive multi-temporal / GSI / RF direct-K) "
+            "experiments (single-date / multi-temporal NDVI / GSI / RF) "
             f"across architectures. train_years={TRAIN_YEARS}, test_year={TEST_YEAR}.",
         )
         n_ch = len(arch_runs[0][1]) if arch_runs[0][1] else 0
-        _sel_sfx = (f"_p{percentile:g}" if percentile is not None
-                    else (f"_k{top_k}" if top_k else ""))
+        _sel_sfx = f"_s{score_threshold:g}"
         if HP_TAG:
             _sel_sfx += f"_{HP_TAG}"
         if SEED_TAG:
@@ -3002,8 +2972,7 @@ def main(
                 "description":  cfg_entry.description,
                 "loss":         loss,
                 "seed":         SEED,
-                **({"top_k": top_k} if top_k else {}),
-                **({"percentile": percentile} if percentile is not None else {}),
+                "score_threshold": score_threshold,
                 **({f"hp_{k}": v for k, v in HP_OVERRIDE.items()} if HP_OVERRIDE else {}),
                 **_get_hardware_info(),
             })
@@ -3186,21 +3155,10 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
-        "--top-k", type=int, nargs="+", default=None, metavar="K",
-        help="Top-K value(s) to sweep (loads select_gsi/rf_direct_k{K}.json per k). E.g. --top-k 5 10 15 20 30",
-    )
-    parser.add_argument(
-        "--percentile", type=float, nargs="+", default=None, metavar="P",
-        help="Percentile threshold(s) to sweep for gsi/rf direct selection "
-             "(loads select_gsi/rf_direct_p{P}.json per P). Pooled-percentile, per-class union. "
-             "Mutually exclusive with --top-k and --score-threshold. E.g. --percentile 70 75 80 85 90 95",
-    )
-    parser.add_argument(
-        "--score-threshold", type=float, nargs="+", default=None, metavar="T",
-        help="Per-crop normalized-score threshold(s) for gsi/rf direct selection "
-             "(loads select_gsi/rf_direct_s{T}.json). Wei et al. 2023 approach: "
-             "normalize per crop to [0,1], retain >= T. Mutually exclusive with --top-k and --percentile. "
-             "E.g. --score-threshold 0.5",
+        "--score-threshold", type=float, default=0.5, metavar="T",
+        help="Per-crop normalized-score threshold for gsi/rf direct selection "
+             "(loads select_gsi/rf_direct_s{T}.json). Wei et al. 2023: normalize per "
+             "crop to [0,1], retain >= T. Default 0.5.",
     )
     parser.add_argument(
         "--batch-size", type=int, default=None, metavar="N",
@@ -3223,9 +3181,8 @@ if __name__ == "__main__":
              "{\"combos\":[...]} applied to every --arch. Tunable keys: lr, weight_decay, "
              "warmup_epochs, sched_power, scheduler(polynomial|cosine), optimizer(adamw|"
              "adam|sgd), momentum, grad_clip(0=off), batch_size. Each combo overrides "
-             "ARCH_CFG/config defaults, runs the --exp/--top-k matrix, and logs to MLflow "
-             "tagged with the combo. Combos run outermost, nesting with --top-k/--percentile "
-             "sweeps. See configs/hp_grid_example.json.",
+             "ARCH_CFG/config defaults, runs the --exp/--arch matrix, and logs to MLflow "
+             "tagged with the combo. Combos run outermost. See configs/hp_grid_example.json.",
     )
     parser.add_argument(
         "--seed-grid", type=int, nargs="+", default=None, metavar="SEED",
@@ -3268,7 +3225,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.eval_only:
-        # Route through the normal --exp/--top-k/--arch path so the deterministic
+        # Route through the normal --exp/--arch path so the deterministic
         # same-area split + correct band selection are rebuilt; run_experiment then
         # skips training, loads this checkpoint, and runs test eval + per-patch viz.
         ckpt_path = Path(args.eval_only)
@@ -3279,20 +3236,6 @@ if __name__ == "__main__":
         # Eval runs log to the tracking server (run names prefixed "eval_"), with
         # the full segmentation map, per-patch PNGs, and metrics CSV as artifacts.
         log.info(f"--eval-only: evaluating {ckpt_path} (logged to MLflow as eval_* runs)")
-
-    n_sel_modes = sum([bool(args.top_k), bool(args.percentile), bool(args.score_threshold)])
-    if n_sel_modes > 1:
-        log.error("--top-k, --percentile, and --score-threshold are mutually exclusive — pick one.")
-        sys.exit(1)
-
-    if args.percentile:
-        sweep = [("percentile", p) for p in args.percentile]
-    elif args.top_k:
-        sweep = [("top_k", k) for k in args.top_k]
-    elif args.score_threshold:
-        sweep = [("score_threshold", t) for t in args.score_threshold]
-    else:
-        sweep = [(None, None)]
 
     # HP-grid combos run outermost; [(None, None)] = no grid (single default pass).
     # Each entry is (arch_or_None, combo): arch=None → use the --arch matrix;
@@ -3322,33 +3265,25 @@ if __name__ == "__main__":
                 log.info(f"{'#'*65}")
                 log.info(f"  HP combo: arch={hp_arch or 'ALL'}  {hp}")
                 log.info(f"{'#'*65}")
-            for mode, val in sweep:
-                if mode is not None:
-                    log.info(f"{'='*65}")
-                    mode_label = {"percentile": "Percentile", "top_k": "Top-K", "score_threshold": "Score-threshold"}.get(mode, mode)
-                    log.info(f"  {mode_label} sweep: {mode}={val}")
-                    log.info(f"{'='*65}")
-                main(
-                    exps=args.exp,
-                    archs=run_archs,
-                    loss=args.loss,
-                    force=args.force,
-                    data_dir=args.data_dir,
-                    phenol_dates=args.phenol_dates,
-                    skip_viz=args.skip_viz,
-                    skip_ndvi=(not args.ndvi) or args.skip_ndvi,
-                    top_k=val if mode == "top_k" else None,
-                    percentile=val if mode == "percentile" else None,
-                    score_threshold=val if mode == "score_threshold" else None,
-                    batch_size=args.batch_size,
-                    epochs=args.epochs,
-                    no_preload=args.no_preload,
-                    cache_only=args.build_cache_only,
-                    norm_mode=args.norm,
-                    no_aug=args.no_aug,
-                    hp=hp,
-                    seed=seed_val,
-                )
+            main(
+                exps=args.exp,
+                archs=run_archs,
+                loss=args.loss,
+                force=args.force,
+                data_dir=args.data_dir,
+                phenol_dates=args.phenol_dates,
+                skip_viz=args.skip_viz,
+                skip_ndvi=(not args.ndvi) or args.skip_ndvi,
+                score_threshold=args.score_threshold,
+                batch_size=args.batch_size,
+                epochs=args.epochs,
+                no_preload=args.no_preload,
+                cache_only=args.build_cache_only,
+                norm_mode=args.norm,
+                no_aug=args.no_aug,
+                hp=hp,
+                seed=seed_val,
+            )
 
     # ── Upload all logs once, after the whole session finished ────────────────
     _flush_deferred_logs()
