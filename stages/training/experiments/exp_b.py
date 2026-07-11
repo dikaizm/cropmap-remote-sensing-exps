@@ -8,13 +8,13 @@ from pathlib import Path
 import numpy as np
 import rasterio
 
-_ROOT = Path(__file__).parent.parent.parent
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
 sys.path.insert(0, str(_ROOT.parent))
 
 from crop_mapping_pipeline.config import (
     S2_BAND_NAMES, N_BANDS_PER_DATE, KEEP_CLASSES, PROCESSED_DIR,
 )
-from crop_mapping_pipeline.stages.experiments.exp_a import _mean_ndvi
+from crop_mapping_pipeline.stages.training.experiments.exp_a import _mean_ndvi
 
 import logging
 log = logging.getLogger(__name__)
@@ -216,7 +216,7 @@ def build_naive_multitemporal_selected_indices(
     else:
         if s2_paths is None or cdl_path is None:
             raise ValueError("s2_paths and cdl_path required for scoped GSI scoring")
-        from crop_mapping_pipeline.stages.selections.band_scoring.gsi.v3 import compute_band_candidates
+        from crop_mapping_pipeline.stages.selection.gsi_scoring import compute_band_candidates
         phenol_files = [s2_paths[local_date_to_idx[d]] for d in phenol_map.values()]
         out_json     = Path(s2_paths[0]).parent / "gsi_naive_mt_candidates.json"
         band_candidates = compute_band_candidates(phenol_files, cdl_path, out_json=out_json, force=force)

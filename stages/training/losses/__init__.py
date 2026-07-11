@@ -11,27 +11,27 @@ CLI key (``--loss``) → description
                                                       pixel upweighting, U-Net style)
 
 Usage:
-    from crop_mapping_pipeline.stages.losses import (
+    from crop_mapping_pipeline.stages.training.losses import (
         build_wce, build_phenology, build_focal_tversky,
         build_dynamic_balanced, build_recall, build_boundary_weighted,
     )
 """
 
-from crop_mapping_pipeline.stages.losses.wce               import build_wce
-from crop_mapping_pipeline.stages.losses.phenology         import (
+from crop_mapping_pipeline.stages.training.losses.wce               import build_wce
+from crop_mapping_pipeline.stages.training.losses.phenology         import (
     PhenologyAwareLoss, build_phenology,
 )
-from crop_mapping_pipeline.stages.losses.focal_tversky     import (
+from crop_mapping_pipeline.stages.training.losses.focal_tversky     import (
     FocalTverskyLoss,
     effective_number_weights, build_focal_tversky,
 )
-from crop_mapping_pipeline.stages.losses.dynamic_balanced  import (
+from crop_mapping_pipeline.stages.training.losses.dynamic_balanced  import (
     DynamicEffectiveClassBalancedLoss, build_dynamic_balanced,
 )
-from crop_mapping_pipeline.stages.losses.recall            import (
+from crop_mapping_pipeline.stages.training.losses.recall            import (
     RecallLoss, build_recall,
 )
-from crop_mapping_pipeline.stages.losses.boundary_weighted import (
+from crop_mapping_pipeline.stages.training.losses.boundary_weighted import (
     BoundaryWeightedLoss, build_boundary_weighted,
 )
 

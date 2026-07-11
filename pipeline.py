@@ -29,7 +29,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-_ROOT = Path(__file__).parent          # crop_mapping_pipeline/
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())          # crop_mapping_pipeline/
 sys.path.insert(0, str(_ROOT.parent))  # parent dir so "from crop_mapping_pipeline.x" works
 
 from dotenv import load_dotenv
@@ -56,7 +56,7 @@ def run_fetch(force=False, data_dir=None, years=None, **_):
     log.info("=" * 60)
     import os
     from googleapiclient.http import MediaIoBaseDownload
-    from crop_mapping_pipeline.stages.fetch_data import _build_drive_service, list_folder
+    from crop_mapping_pipeline.stages.data.fetch_data import _build_drive_service, list_folder
     from crop_mapping_pipeline.config import (
         GDRIVE_PROCESSED_S2_FOLDER_IDS, GDRIVE_PROCESSED_CDL_FOLDER_ID,
         S2_PROCESSED_DIR, CDL_DIR,
@@ -100,7 +100,7 @@ def run_feature(force=False, data_dir=None):
     log.info("=" * 60)
     log.info("BAND SCORING — GSI and RF importance")
     log.info("=" * 60)
-    from crop_mapping_pipeline.stages.band_scoring import main as feature_main
+    from crop_mapping_pipeline.stages.selection.band_scoring import main as feature_main
     feature_main(force=force, data_dir=data_dir, mode="gsi")
 
 
@@ -109,7 +109,7 @@ def run_train(force=False, data_dir=None):
     log.info("=" * 60)
     log.info("TRAINING — Band selection comparison")
     log.info("=" * 60)
-    from crop_mapping_pipeline.stages.train_segmentation import main as train_main
+    from crop_mapping_pipeline.stages.training.train_segmentation import main as train_main
     train_main(force=force, data_dir=data_dir)
 
 

@@ -23,7 +23,7 @@ from crop_mapping_pipeline.config import (
     SELECT_TOP_K_PER_CROP, SELECT_RF_DIRECT_JSON, SELECT_RF_DIRECT_BANDS,
     RF_N_ESTIMATORS, RF_MAX_PIXELS,
 )
-from crop_mapping_pipeline.stages.selections._utils import (
+from crop_mapping_pipeline.stages.selection._utils import (
     build_channel_names, sample_pixels, save_selection, log_selection_run, save_per_class_table,
 )
 

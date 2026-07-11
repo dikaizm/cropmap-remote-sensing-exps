@@ -12,7 +12,7 @@ import rasterio
 
 import mlflow
 
-import crop_mapping_pipeline.stages.band_scoring as fa2
+import crop_mapping_pipeline.stages.selection.band_scoring as fa2
 
 log = logging.getLogger(__name__)
 

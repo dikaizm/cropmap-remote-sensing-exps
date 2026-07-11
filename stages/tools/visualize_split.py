@@ -27,7 +27,7 @@ import rasterio
 import torch
 from torch.utils.data import random_split, ConcatDataset
 
-_ROOT = Path(__file__).parent.parent
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
 sys.path.insert(0, str(_ROOT.parent))
 
 from crop_mapping_pipeline.config import (

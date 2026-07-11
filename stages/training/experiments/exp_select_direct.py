@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from crop_mapping_pipeline.config import S2_BAND_NAMES
-from crop_mapping_pipeline.stages.experiments.base import parse_date
+from crop_mapping_pipeline.stages.training.experiments.base import parse_date
 
 log = logging.getLogger(__name__)
 

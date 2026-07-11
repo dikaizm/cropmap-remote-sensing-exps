@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import rasterio
 
-_ROOT = Path(__file__).parent.parent.parent
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
 sys.path.insert(0, str(_ROOT.parent))
 
 from crop_mapping_pipeline.config import (
@@ -136,7 +136,7 @@ def build_single_date_selected_indices(
     else:
         if s2_paths is None or cdl_path is None:
             raise ValueError("s2_paths and cdl_path required for scoped GSI scoring")
-        from crop_mapping_pipeline.stages.selections.band_scoring.gsi.v3 import compute_band_candidates
+        from crop_mapping_pipeline.stages.selection.gsi_scoring import compute_band_candidates
         peak_file = s2_paths[local_date_to_idx[best_date]]
         out_json  = Path(s2_paths[0]).parent / "gsi_single_date_candidates.json"
         band_candidates = compute_band_candidates([peak_file], cdl_path, out_json=out_json, force=force)

@@ -20,8 +20,8 @@ import pandas as pd
 from crop_mapping_pipeline.config import (
     KEEP_CLASSES, CDL_CLASS_NAMES, S2_BAND_NAMES,
 )
-from crop_mapping_pipeline.stages.selections._utils import build_channel_names, sample_pixels
-from crop_mapping_pipeline.stages.selections.rf_direct import (
+from crop_mapping_pipeline.stages.selection._utils import build_channel_names, sample_pixels
+from crop_mapping_pipeline.stages.selection.feature_importance_selection import (
     _train_multiclass_rf, _per_class_importance,
 )
 

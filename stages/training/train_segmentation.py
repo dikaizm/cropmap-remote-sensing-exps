@@ -51,7 +51,7 @@ os.environ.setdefault("HF_HOME", str(Path(__file__).parent.parent / ".hf_cache")
 import mlflow
 from mlflow.tracking import MlflowClient
 
-_ROOT = Path(__file__).parent.parent   # crop_mapping_pipeline/
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())   # crop_mapping_pipeline/
 sys.path.insert(0, str(_ROOT.parent))
 
 from crop_mapping_pipeline.utils.mlflow_utils import patch_artifact_logging
@@ -74,12 +74,12 @@ from crop_mapping_pipeline.config import (
 )
 from crop_mapping_pipeline.utils.constants import USDA_CDL_COLORS
 from geoai.geoai.train import RasterPatchDataset, train_semantic_one_epoch
-from crop_mapping_pipeline.stages.losses import (
+from crop_mapping_pipeline.stages.training.losses import (
     build_wce, build_focal_tversky, build_dynamic_balanced,
 )
 from geoai.geoai.utils.device import get_device
 from crop_mapping_pipeline.models import DeepLabV3PlusCBAM, build_segformer
-from crop_mapping_pipeline.stages.spatial_split import (
+from crop_mapping_pipeline.stages.data.spatial_split import (
     _block_spatial_split, _save_block_split_artifacts,
 )
 
@@ -381,7 +381,7 @@ def _filter_s2_by_band_indices(s2_paths, band_indices, n_bands_per_file=N_BANDS_
     return filtered_paths, remapped
 
 
-from crop_mapping_pipeline.stages.experiments import (
+from crop_mapping_pipeline.stages.training.experiments import (
     parse_date,
     build_local_band_map,
     build_single_date_indices,
@@ -390,9 +390,9 @@ from crop_mapping_pipeline.stages.experiments import (
     build_registry,
     expand_exp_keys,
 )
-from crop_mapping_pipeline.stages.experiments.exp_select_direct import build_direct_indices
-from crop_mapping_pipeline.stages.selections.rf_band_only import run_rf_band_only, save_rf_band_json
-from crop_mapping_pipeline.stages.ndvi_disagreement_analysis import (
+from crop_mapping_pipeline.stages.training.experiments.exp_select_direct import build_direct_indices
+from crop_mapping_pipeline.stages.selection.rf_band_only import run_rf_band_only, save_rf_band_json
+from crop_mapping_pipeline.stages.training.ndvi_disagreement_analysis import (
     run_ndvi_disagreement, score_patch_verdict, B4_IDX, B8_IDX,
 )
 from crop_mapping_pipeline.config import (
@@ -2836,7 +2836,7 @@ def main(
         "args" in globals() and getattr(args, "use_cloud_preload", False)) else None
     if _pc_gdrive and not getattr(args, "no_preload", False):
         PRELOAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        from crop_mapping_pipeline.stages.fetch_data import fetch_preload_cache
+        from crop_mapping_pipeline.stages.data.fetch_data import fetch_preload_cache
         log.info(f"Fetching cloud preload cache from GDrive folder {_pc_gdrive} → {PRELOAD_CACHE_DIR}")
         got = fetch_preload_cache(_pc_gdrive, str(PRELOAD_CACHE_DIR), overwrite=False)
         log.info(f"Cloud preload cache: {len(got)} file(s) ready in {PRELOAD_CACHE_DIR}")
@@ -3482,7 +3482,7 @@ if __name__ == "__main__":
     if args.build_cache_only and not args.no_upload_cache:
         _up_folder = args.upload_cache_gdrive or GDRIVE_PRELOAD_CACHE_FOLDER_ID or None
         if _up_folder:
-            from crop_mapping_pipeline.stages.fetch_data import upload_preload_cache
+            from crop_mapping_pipeline.stages.data.fetch_data import upload_preload_cache
             log.info(f"Uploading built preload cache from {PRELOAD_CACHE_DIR} → GDrive {_up_folder}")
             up = upload_preload_cache(_up_folder, str(PRELOAD_CACHE_DIR), overwrite=False)
             log.info(f"Preload cache upload complete: {len(up)} file(s)")

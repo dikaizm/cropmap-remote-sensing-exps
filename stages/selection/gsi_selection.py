@@ -19,7 +19,7 @@ from crop_mapping_pipeline.config import (
     KEEP_CLASSES, CDL_CLASS_NAMES, S2_BAND_NAMES,
     SELECT_TOP_K_PER_CROP, SELECT_GSI_DIRECT_JSON, SELECT_GSI_DIRECT_BANDS,
 )
-from crop_mapping_pipeline.stages.selections._utils import (
+from crop_mapping_pipeline.stages.selection._utils import (
     build_channel_names, sample_pixels, save_selection, log_selection_run, save_per_class_table,
 )
 

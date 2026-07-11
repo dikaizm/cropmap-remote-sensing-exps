@@ -19,7 +19,7 @@ import os
 import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).parent.parent   # crop_mapping_pipeline/
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())   # crop_mapping_pipeline/
 sys.path.insert(0, str(_ROOT.parent))
 
 log = logging.getLogger(__name__)

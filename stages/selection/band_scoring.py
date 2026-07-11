@@ -31,7 +31,7 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_ROOT = next(_p for _p in pathlib.Path(__file__).resolve().parents if (_p / "config.py").exists())
 sys.path.insert(0, str(_ROOT.parent))
 
 os.environ["MLFLOW_DISABLE_TELEMETRY"] = "true"
@@ -104,7 +104,7 @@ def configure_data_dir(data_dir: str | None) -> None:
 def _glob_s2_train() -> list[str]:
     """Glob S2 files from flat train/ dir, then drop low-validity dates
     (same filter as the training pipeline → standalone selection stays consistent)."""
-    from crop_mapping_pipeline.stages.valid_dates import filter_valid_s2_dates
+    from crop_mapping_pipeline.stages.data.valid_dates import filter_valid_s2_dates
     files = sorted(glob(str(S2_TRAIN_DIR / "*_processed.tif")) + glob(str(S2_TRAIN_DIR / "S2H_*.tif")))
     seen  = set()
     files = [p for p in files if not (p in seen or seen.add(p))]
@@ -480,7 +480,7 @@ def main(force: bool = False, data_dir: str = None, output_dir: str = None,
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
     if mode == "gsi":
-        from crop_mapping_pipeline.stages.selections.band_scoring.gsi import run_gsi_scoring
+        from crop_mapping_pipeline.stages.selection.gsi_scoring import run_gsi_scoring
         gsi_path = GSI_CANDIDATES_JSON if not data_dir else Path(data_dir) / "s2" / "2022" / "gsi_candidates.json"
         if not force and gsi_path.exists():
             log.info(f"GSI candidates already exist: {gsi_path}  (--force to re-run)")
@@ -491,8 +491,8 @@ def main(force: bool = False, data_dir: str = None, output_dir: str = None,
         return
 
     if mode == "select":
-        from crop_mapping_pipeline.stages.selections.gsi_direct import run_gsi_direct
-        from crop_mapping_pipeline.stages.selections.rf_direct import run_rf_direct
+        from crop_mapping_pipeline.stages.selection.gsi_selection import run_gsi_direct
+        from crop_mapping_pipeline.stages.selection.feature_importance_selection import run_rf_direct
         if selector not in _DIRECT_OUTPUT_MAP:
             raise ValueError(
                 f"--selector must be 'gsi_direct' or 'rf_direct', got {selector!r}"
