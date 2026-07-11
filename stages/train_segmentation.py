@@ -2183,7 +2183,7 @@ def _build_drive_service():
         raise FileNotFoundError(
             f"OAuth token not found: {GDRIVE_OAUTH_TOKEN}\n"
             "Generate it locally with:\n"
-            "  python stages/process_data_v6.py --auth\n"
+            "  python stages/process_data.py --auth\n"
             "Then copy to the server via scp."
         )
     with open(GDRIVE_OAUTH_TOKEN, "rb") as f:
@@ -2836,7 +2836,7 @@ def main(
         "args" in globals() and getattr(args, "use_cloud_preload", False)) else None
     if _pc_gdrive and not getattr(args, "no_preload", False):
         PRELOAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        from crop_mapping_pipeline.stages.fetch_data_v6 import fetch_preload_cache
+        from crop_mapping_pipeline.stages.fetch_data import fetch_preload_cache
         log.info(f"Fetching cloud preload cache from GDrive folder {_pc_gdrive} → {PRELOAD_CACHE_DIR}")
         got = fetch_preload_cache(_pc_gdrive, str(PRELOAD_CACHE_DIR), overwrite=False)
         log.info(f"Cloud preload cache: {len(got)} file(s) ready in {PRELOAD_CACHE_DIR}")
@@ -2945,7 +2945,7 @@ def main(
             log.error(f"  {Path(p).name}  ({err})")
         raise RuntimeError(
             f"{len(corrupt)} corrupt S2 file(s) detected. "
-            "Re-download:  python stages/fetch_data_v6.py --folder-id FOLDER_ID --years <year> --overwrite"
+            "Re-download:  python stages/fetch_data.py --folder-id FOLDER_ID --years <year> --overwrite"
         )
     if no_data:
         log.warning(f"Excluding {len(no_data)} date(s) below {MIN_VALID_FRAC_FILE*100:.0f}% valid pixels (high cloud / partial capture):")
@@ -3482,7 +3482,7 @@ if __name__ == "__main__":
     if args.build_cache_only and not args.no_upload_cache:
         _up_folder = args.upload_cache_gdrive or GDRIVE_PRELOAD_CACHE_FOLDER_ID or None
         if _up_folder:
-            from crop_mapping_pipeline.stages.fetch_data_v6 import upload_preload_cache
+            from crop_mapping_pipeline.stages.fetch_data import upload_preload_cache
             log.info(f"Uploading built preload cache from {PRELOAD_CACHE_DIR} → GDrive {_up_folder}")
             up = upload_preload_cache(_up_folder, str(PRELOAD_CACHE_DIR), overwrite=False)
             log.info(f"Preload cache upload complete: {len(up)} file(s)")

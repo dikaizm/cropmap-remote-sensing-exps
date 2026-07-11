@@ -26,7 +26,7 @@ _ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_ROOT.parent))
 
 from crop_mapping_pipeline.config import PROCESSED_DIR, SPATIAL_TEST_AREAS
-from crop_mapping_pipeline.stages.process_data_v5 import process_cdl
+from crop_mapping_pipeline.stages.process_data import process_cdl
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger(__name__)

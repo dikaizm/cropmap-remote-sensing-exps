@@ -22,7 +22,7 @@ PRELOAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 S2_TRAIN_DIR = PROCESSED_DIR / "s2" / "2024"   # main training area (all dates, flat; v6.1 processed S2)
 S2_PROCESSED_DIR = S2_TRAIN_DIR                  # backwards-compat alias
 
-CDL_TRAIN  = CDL_DIR / "cdl_2024_study_area_filtered.tif"   # matches process_data_v6.py output naming
+CDL_TRAIN  = CDL_DIR / "cdl_2024_study_area_filtered.tif"   # matches process_data.py output naming
 CDL_BY_YEAR = {"2024": CDL_TRAIN}        # legacy lookup used internally
 
 # ── S2 metadata ────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ CDL_DOWNLOAD_URLS = {
     "2024": "https://www.nass.usda.gov/Research_and_Science/Cropland/Release/datasets/2024_30m_cdls.zip",
 }
 # Native 10m CDL (random-forest, Sentinel-2+Landsat fusion, no 30m resampling).
-# Only available from 2024 onward — used by process_data_v6.py for the test year.
+# Only available from 2024 onward — used by process_data.py for the test year.
 CDL_DOWNLOAD_URLS_10M = {
     "2024": "https://www.nass.usda.gov/Research_and_Science/Cropland/Release/datasets/2024_10m_cdls.zip",
 }

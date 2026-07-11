@@ -1,7 +1,7 @@
 """
-Stage 0b (v5) — Download raw S2 files from Google Drive.
+Stage 0b — Download S2 files from Google Drive.
 
-Unlike v2, GEE exports one file per date (no tile splitting):
+GEE exports one file per date (no tile splitting):
     S2H_{year}_{YYYY_MM_DD}.tif
 
 Files are sorted into year subdirectories:
@@ -10,11 +10,11 @@ Files are sorted into year subdirectories:
     {output_dir}/2024/S2H_2024_*.tif
 
 Usage:
-    python fetch_data_v5.py --folder-id FOLDER_ID
-    python fetch_data_v5.py --folder-id FOLDER_ID --years 2022
-    python fetch_data_v5.py --folder-id FOLDER_ID --years 2022 --overwrite
-    python fetch_data_v5.py --folder-id FOLDER_ID --list-files
-    python fetch_data_v5.py --auth
+    python fetch_data.py --folder-id FOLDER_ID
+    python fetch_data.py --folder-id FOLDER_ID --years 2022
+    python fetch_data.py --folder-id FOLDER_ID --years 2022 --overwrite
+    python fetch_data.py --folder-id FOLDER_ID --list-files
+    python fetch_data.py --auth
 """
 
 import os
@@ -49,7 +49,7 @@ def _build_drive_service():
     if not GDRIVE_OAUTH_TOKEN.exists():
         raise FileNotFoundError(
             f"OAuth token not found: {GDRIVE_OAUTH_TOKEN}\n"
-            "Run:  python stages/process_data_v5.py --auth"
+            "Run:  python stages/process_data.py --auth"
         )
     with open(GDRIVE_OAUTH_TOKEN, "rb") as f:
         creds = pickle.load(f)
@@ -304,6 +304,123 @@ def download_cdl(folder_id: str, output_dir: str,
     return results
 
 
+def fetch_preload_cache(folder_id: str, output_dir: str,
+                        overwrite: bool = False) -> list:
+    """Download a cloud-built portable preload cache flat into output_dir.
+
+    Grabs every `preload_*.npy` + `preload_*_masks.pt` reachable from folder_id
+    (also descends into an optional `preload_cache/` subfolder). Filenames are
+    content-hash keyed by PreloadedDataset, so a matching file lands as a cache
+    hit at train time — no local rebuild. Pairs with `--build-cache-only`, which
+    builds the same files locally for upload.
+    """
+    from googleapiclient.http import MediaIoBaseDownload
+
+    service = _build_drive_service()
+    sub     = _find_subfolder(service, folder_id, "preload_cache")
+    files, _ = _list_children(service, sub if sub else folder_id)
+    cache = {n: fid for n, fid in files.items()
+             if n.startswith("preload_") and (n.endswith(".npy") or n.endswith(".pt"))}
+    if not cache:
+        log.warning("  No preload cache files (preload_*.npy / *_masks.pt) in folder %s", folder_id)
+        return []
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    results, new_count, skipped, errors = [], 0, 0, 0
+    log.info("  Downloading %d preload cache file(s) → %s", len(cache), out_dir)
+
+    for fname, fid in sorted(cache.items()):
+        out_path = out_dir / fname
+        if not overwrite and out_path.exists() and out_path.stat().st_size > 0:
+            log.info("  Skip (exists): %s", fname)
+            skipped += 1
+            results.append(str(out_path))
+            continue
+        tmp = out_path.with_name(out_path.name + ".tmp")
+        try:
+            request = service.files().get_media(fileId=fid)
+            with open(tmp, "wb") as fh:
+                dl   = MediaIoBaseDownload(fh, request, chunksize=50 * 1024 * 1024)
+                done = False
+                while not done:
+                    status, done = dl.next_chunk()
+                    if status:
+                        log.info("  %s: %d%%", fname, int(status.progress() * 100))
+            tmp.rename(out_path)
+            log.info("  Done: %s  (%.0f MB)", fname, out_path.stat().st_size / 1e6)
+            new_count += 1
+            results.append(str(out_path))
+        except Exception as exc:
+            tmp.unlink(missing_ok=True)
+            log.error("  Failed: %s (%s)", fname, exc)
+            errors += 1
+
+    log.info("  Preload cache: %d new, %d skipped, %d errors", new_count, skipped, errors)
+    return results
+
+
+def upload_preload_cache(folder_id: str, cache_dir: str,
+                         overwrite: bool = False) -> list:
+    """Upload locally-built portable preload cache files to a GDrive folder.
+
+    Pushes every `preload_*.npy` + `preload_*_masks.pt` under cache_dir. Skips
+    files already present in the folder unless overwrite=True (then replaces
+    in place via files().update). Pairs with `--build-cache-only` so a cache
+    built on one machine is reusable by `--preload-cache-gdrive` on another.
+    """
+    from googleapiclient.http import MediaFileUpload
+
+    cache_dir = Path(cache_dir)
+    local = sorted(
+        [p for p in cache_dir.glob("preload_*.npy") if p.stat().st_size > 0] +
+        [p for p in cache_dir.glob("preload_*_masks.pt") if p.stat().st_size > 0]
+    )
+    if not local:
+        log.warning("  No preload cache files to upload in %s", cache_dir)
+        return []
+
+    service       = _build_drive_service()
+    existing, _   = _list_children(service, folder_id)   # {name: id}
+    results, new_count, replaced, skipped, errors = [], 0, 0, 0, 0
+    log.info("  Uploading %d preload cache file(s) → GDrive folder %s", len(local), folder_id)
+
+    for path in local:
+        fname  = path.name
+        exists = existing.get(fname)
+        if exists and not overwrite:
+            log.info("  Skip (exists): %s", fname)
+            skipped += 1
+            results.append(fname)
+            continue
+        media = MediaFileUpload(str(path), resumable=True, chunksize=50 * 1024 * 1024)
+        try:
+            if exists:
+                req = service.files().update(fileId=exists, media_body=media)
+            else:
+                req = service.files().create(
+                    body={"name": fname, "parents": [folder_id]},
+                    media_body=media, fields="id",
+                )
+            resp = None
+            while resp is None:
+                status, resp = req.next_chunk()
+                if status:
+                    log.info("  %s: %d%%", fname, int(status.progress() * 100))
+            log.info("  Done: %s  (%.0f MB)%s", fname, path.stat().st_size / 1e6,
+                     " [replaced]" if exists else "")
+            replaced += 1 if exists else 0
+            new_count += 0 if exists else 1
+            results.append(fname)
+        except Exception as exc:
+            log.error("  Failed: %s (%s)", fname, exc)
+            errors += 1
+
+    log.info("  Preload cache upload: %d new, %d replaced, %d skipped, %d errors",
+             new_count, replaced, skipped, errors)
+    return results
+
+
 def download_date_keys(folder_id: str, output_dir: str,
                        date_keys: list, overwrite: bool = False,
                        workers: int = 2) -> list:
@@ -370,7 +487,9 @@ if __name__ == "__main__":
     parser.add_argument("--verify-only", action="store_true")
     parser.add_argument("--list-files", action="store_true")
     parser.add_argument("--include-cdl", action="store_true",
-                        help="Also download CDL files from cdl/ subfolder")
+                        help="Also download CDL files (v6.1 processed CDL folder) into cdl/")
+    parser.add_argument("--cdl-only", action="store_true",
+                        help="Download only CDL (skip S2 + test areas). Implies --include-cdl.")
     parser.add_argument("--raw", action="store_true",
                         help="Download raw S2 files (no _processed suffix) from raw GDrive folders")
     parser.add_argument("--workers", type=int, default=2)
@@ -378,6 +497,9 @@ if __name__ == "__main__":
                         help="Download test_a and test_b S2 files to s2/test_a/ and s2/test_b/")
     parser.add_argument("--auth", action="store_true")
     args = parser.parse_args()
+
+    if args.cdl_only:
+        args.include_cdl = True
 
     if args.auth:
         generate_oauth_token()
@@ -390,9 +512,9 @@ if __name__ == "__main__":
     )
 
     from crop_mapping_pipeline.config import (
-        GDRIVE_PROCESSED_S2_FOLDER_IDS,
+        GDRIVE_PROCESSED_S2_V6_FOLDER_IDS,
         GDRIVE_RAW_S2_V5_FOLDER_IDS,
-        GDRIVE_PROCESSED_CDL_FOLDER_ID_V5,
+        GDRIVE_PROCESSED_CDL_FOLDER_ID_V6,
     )
 
     if args.raw:
@@ -402,7 +524,7 @@ if __name__ == "__main__":
     else:
         output_dir    = args.output_dir or str(_ROOT / "data" / "processed")
         s2_output_dir = str(Path(output_dir) / "s2")
-        folder_ids    = GDRIVE_PROCESSED_S2_FOLDER_IDS
+        folder_ids    = GDRIVE_PROCESSED_S2_V6_FOLDER_IDS  # v6.1 processed S2 (2024)
 
     years = args.years or ALL_YEARS
 
@@ -411,7 +533,7 @@ if __name__ == "__main__":
         sys.exit(0 if ok else 1)
 
     # S2 — download each year from its own folder → {s2_output_dir}/{year}/
-    for yr in years:
+    for yr in ([] if args.cdl_only else years):
         fid = args.folder_id or folder_ids.get(yr)
         if not fid:
             log.warning("  No folder ID for year %s — skipping", yr)
@@ -432,7 +554,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # Spatial test areas — flat folders → {s2_output_dir}/test_a/ and test_b/
-    if args.test_areas:
+    if args.test_areas and not args.cdl_only:
         from crop_mapping_pipeline.config import (
             GDRIVE_S2_TEST_A_FOLDER_ID,
             GDRIVE_S2_TEST_B_FOLDER_ID,
@@ -451,7 +573,7 @@ if __name__ == "__main__":
 
     # CDL — flat folder → {output_dir}/cdl/
     if args.include_cdl:
-        cdl_fid = GDRIVE_PROCESSED_CDL_FOLDER_ID_V5
+        cdl_fid = GDRIVE_PROCESSED_CDL_FOLDER_ID_V6
         log.info("  Fetching CDL from folder %s", cdl_fid)
         service = _build_drive_service()
         tifs, _ = _list_children(service, cdl_fid)
@@ -480,4 +602,5 @@ if __name__ == "__main__":
         else:
             log.warning("  No CDL files found in folder %s", cdl_fid)
 
-    verify(s2_output_dir, years=years)
+    if not args.cdl_only:
+        verify(s2_output_dir, years=years)
