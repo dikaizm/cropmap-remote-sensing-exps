@@ -4,11 +4,11 @@ from crop_mapping_pipeline.stages.training.experiments.base import (
     parse_date,
     build_local_band_map,
 )
-from crop_mapping_pipeline.stages.training.experiments.exp_a import (
+from crop_mapping_pipeline.stages.training.experiments.single_date import (
     build_single_date_indices,
     build_exp_A_indices,          # backwards-compat
 )
-from crop_mapping_pipeline.stages.training.experiments.exp_b import (
+from crop_mapping_pipeline.stages.training.experiments.mt_ndvi import (
     build_naive_multitemporal_indices,
     build_exp_B_indices,          # backwards-compat
 )

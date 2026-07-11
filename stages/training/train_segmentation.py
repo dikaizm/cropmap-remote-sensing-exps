@@ -389,7 +389,7 @@ from crop_mapping_pipeline.stages.training.experiments import (
     build_registry,
     expand_exp_keys,
 )
-from crop_mapping_pipeline.stages.training.experiments.exp_select_direct import build_direct_indices
+from crop_mapping_pipeline.stages.training.experiments.feature_selection import build_direct_indices
 from crop_mapping_pipeline.stages.training.ndvi_disagreement_analysis import (
     run_ndvi_disagreement, score_patch_verdict, B4_IDX, B8_IDX,
 )

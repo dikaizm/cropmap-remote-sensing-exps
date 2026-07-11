@@ -14,7 +14,7 @@ sys.path.insert(0, str(_ROOT.parent))
 from crop_mapping_pipeline.config import (
     S2_BAND_NAMES, N_BANDS_PER_DATE, KEEP_CLASSES, PROCESSED_DIR,
 )
-from crop_mapping_pipeline.stages.training.experiments.exp_a import _mean_ndvi
+from crop_mapping_pipeline.stages.training.experiments.single_date import _mean_ndvi
 
 import logging
 log = logging.getLogger(__name__)
