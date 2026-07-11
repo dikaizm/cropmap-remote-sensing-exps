@@ -2,7 +2,7 @@
 
 Four experiments:
   single_date — peak NDVI date, ALL bands (single-date baseline)
-  mt_base     — 4 calendar dates, ALL VEGE_BANDS (multi-temporal baseline, no selection)
+  mt_ndvi     — 4 calendar dates, ALL VEGE_BANDS (multi-temporal baseline, no selection)
   gsi         — multi-temporal, GSI-direct top-K channels
   rf          — multi-temporal, RF-importance top-K channels (multi-class MDI)
 
@@ -57,8 +57,8 @@ def build_registry(
         )
 
     if mt_base_idx is not None:
-        reg["mt_base"] = ExperimentConfig(
-            key         = "mt_base",
+        reg["mt_ndvi"] = ExperimentConfig(
+            key         = "mt_ndvi",
             description = f"4 calendar dates {list(phenol_map.values())}, all VEGE_BANDS (baseline) — {len(mt_base_idx)}ch",
             band_indices= mt_base_idx,
             band_names  = mt_base_names,

@@ -6,7 +6,7 @@ Four experiment configurations × 2 architectures = up to 8 training runs.
 | Config             | Dates               | Band selection | Purpose                      |
 |--------------------|---------------------|----------------|------------------------------|
 | single_date        | peak NDVI           | none (all bands)| Baseline (isolates temporal) |
-| mt_base            | 4 calendar dates     | none           | Multi-temporal baseline   |
+| mt_ndvi            | 4 calendar dates     | none           | Multi-temporal baseline   |
 | gsi                | GSI          | GSI     | GSI spectral-temporal        |
 | rf                 | RF           | RF      | RF spectral-temporal         |
 
@@ -2841,7 +2841,7 @@ def main(
 
     # ── Base domain channels (all 9 VEGE_BANDS, no band selection) ─────────
     needs_sd  = not exps or "single_date" in exps
-    needs_nmt = not exps or "mt_base" in exps
+    needs_nmt = not exps or "mt_ndvi" in exps
 
     sd_base_idx = sd_base_names = sd_date_key = None
     nmt_base_idx = nmt_base_names = phenol_map_base = None
@@ -2868,9 +2868,9 @@ def main(
     if not exps or "single_date" in exps:
         single_date_idx, single_date_names, single_date_key = sd_base_idx, sd_base_names, sd_date_key
 
-    # ── mt_base (4 calendar dates × ALL VEGE_BANDS — no selection) ──
+    # ── mt_ndvi (4 calendar dates × ALL VEGE_BANDS — no selection) ──
     mt_base_idx = mt_base_names = phenol_map = None
-    if not exps or "mt_base" in exps:
+    if not exps or "mt_ndvi" in exps:
         mt_base_idx, mt_base_names, phenol_map = nmt_base_idx, nmt_base_names, phenol_map_base
 
     def _find_direct_json(selector: str) -> Path:
@@ -2902,7 +2902,7 @@ def main(
 
     # ── Build experiment registry & plan ───────────────────────────────────
     all_archs = list(ARCH_CFG.keys())
-    run_exps  = exps  or ["single_date", "mt_base", "gsi", "rf"]
+    run_exps  = exps  or ["single_date", "mt_ndvi", "gsi", "rf"]
     run_archs = archs or all_archs
 
     registry = build_registry(
@@ -3085,12 +3085,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train segmentation models for band selection comparison")
     parser.add_argument(
         "--exp", nargs="+",
-        choices=["single_date", "mt_base", "gsi", "rf"],
-        default=["single_date", "mt_base", "gsi", "rf"],
+        choices=["single_date", "mt_ndvi", "gsi", "rf"],
+        default=["single_date", "mt_ndvi", "gsi", "rf"],
         help=(
             "Experiments to run (default: all four). "
             "single_date=peak NDVI date + ALL bands (single-date baseline), "
-            "mt_base=4 calendar dates + ALL S2_BAND_NAMES (multi-temporal baseline, no selection), "
+            "mt_ndvi=4 calendar dates + ALL S2_BAND_NAMES (multi-temporal baseline, no selection), "
             "gsi=GSI-direct top-K, rf=RF-direct top-K (multi-class MDI)."
         ),
     )
