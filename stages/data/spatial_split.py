@@ -403,7 +403,7 @@ def compute_split_from_cdl(cdl_paths, patch_size, stride, keep_classes, remap_lu
 
 
 def _main():
-    _ROOT = Path(__file__).parent.parent          # crop_mapping_pipeline/
+    _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())          # crop_mapping_pipeline/
     sys.path.insert(0, str(_ROOT.parent))
     from crop_mapping_pipeline.config import (
         PATCH_SIZE, STRIDE, MIN_VALID_FRAC, KEEP_CLASSES, REMAP_LUT, NUM_CLASSES,

@@ -4,8 +4,7 @@ Stage 0.5b (v6) — Process single-file-per-date GEE S2 exports + resolution-awa
 S2 handling identical to v5. CDL handling now branches on native resolution:
   - 2022 / 2023: only 30m CDL exists → reproject (nearest) to S2 grid, filter
     classes, confidence mask (pixels < 85% → unknown=255), then majority filter
-    (k=3) + boundary erosion/small-component removal (CalCROP21-style) to clean
-    up 30m→10m resampling artifacts.
+    (k=3) to clean up 30m→10m resampling artifacts.
   - 2024 (and any future year in CDL_DOWNLOAD_URLS_10M): USDA now publishes a
     NATIVE 10m CDL (random forest, Sentinel-2+Landsat fusion, GEE-based — see
     Li et al. IGARSS 2024 / TGRS 2024 / Scientific Data 2026). This raster has
@@ -30,7 +29,6 @@ Usage:
     python stages/process_data.py --years 2022 2023
     python stages/process_data.py --years 2024              # uses native 10m CDL
     python stages/process_data.py --years 2022 --skip-upload
-    python stages/process_data.py --years 2022 --no-erode    # skip boundary cleanup
     python stages/process_data.py --auth
 """
 
@@ -52,7 +50,7 @@ import rasterio.windows
 from rasterio.warp import reproject, Resampling
 from dotenv import load_dotenv
 
-_ROOT = pathlib.Path(__file__).parent.parent
+_ROOT = next(_p for _p in pathlib.Path(__file__).resolve().parents if (_p / "config.py").exists())
 load_dotenv(_ROOT / ".env")
 sys.path.insert(0, str(_ROOT.parent))
 
@@ -63,7 +61,7 @@ from crop_mapping_pipeline.config import (
 )
 from crop_mapping_pipeline.utils.constants import USDA_CDL_NAMES
 from crop_mapping_pipeline.utils.label import (
-    label_filtering, majority_filter_labels, erode_and_clean_labels,
+    label_filtering, majority_filter_labels,
 )
 
 log = logging.getLogger(__name__)
@@ -225,9 +223,6 @@ def process_cdl(cdl_raw_path: str, s2_ref_path: str,
                 overwrite: bool = False,
                 native_10m: bool = False,
                 majority_kernel: int = 3,
-                erode: bool = True,
-                erode_iter: int = 1,
-                min_size: int = 4,
                 unknown_value: int = 255,
                 conf_raw_path: str | None = None,
                 conf_threshold: int = 55) -> None:
@@ -238,8 +233,7 @@ def process_cdl(cdl_raw_path: str, s2_ref_path: str,
         No majority filter, no erosion — there's no resampling noise to clean.
     native_10m=False (legacy 30m CDL upsampled to 10m):
         reproject (nearest, 30m→10m) → filter classes → confidence mask →
-        majority filter (k=majority_kernel) → optional boundary erosion +
-        small-component removal (CalCROP21-style) if erode=True.
+        majority filter (k=majority_kernel).
 
     conf_raw_path: path to CDL companion confidence raster (0-100 uint8).
         If provided, pixels with confidence < conf_threshold are set to
@@ -318,17 +312,7 @@ def process_cdl(cdl_raw_path: str, s2_ref_path: str,
         Path(current).unlink(missing_ok=True)
         current = _tmp_mf
 
-    if erode:
-        log.info("  Eroding boundaries (%dpx) + dropping components <%dpx → unknown(%d)",
-                 erode_iter, min_size, unknown_value)
-        erode_and_clean_labels(
-            current, out_filtered,
-            erosion_iter=erode_iter, min_size=min_size, unknown_value=unknown_value,
-        )
-        Path(current).unlink(missing_ok=True)
-    else:
-        Path(current).rename(out_filtered)
-
+    Path(current).rename(out_filtered)
     log.info("  CDL filtered: %s", Path(out_filtered).name)
 
 
@@ -613,9 +597,6 @@ def main(
     download_workers: int  = 2,
     cdl_only        : bool = False,
     majority_kernel : int  = 3,
-    erode           : bool = True,
-    erode_iter      : int  = 1,
-    min_size        : int  = 4,
     unknown_value   : int  = 255,
     conf_threshold  : int  = 55,
     no_conf_mask    : bool = False,
@@ -878,8 +859,7 @@ def main(
             cdl_filtered    = str(cdl_out_dir / f"cdl_{yr}_study_area_filtered.tif")
             process_cdl(cdl_raw, s2_ref_path, cdl_reprojected, cdl_filtered,
                         overwrite=overwrite, native_10m=native_10m,
-                        majority_kernel=majority_kernel, erode=erode,
-                        erode_iter=erode_iter, min_size=min_size,
+                        majority_kernel=majority_kernel,
                         unknown_value=unknown_value,
                         conf_raw_path=cdl_conf_raw,
                         conf_threshold=conf_threshold)
@@ -936,10 +916,6 @@ if __name__ == "__main__":
     parser.add_argument("--download-workers", type=int, default=2)
     parser.add_argument("--majority-kernel", type=int, default=3,
                         help="Majority filter kernel for 30m-resampled CDL years (default: 3)")
-    parser.add_argument("--no-erode", action="store_true",
-                        help="Skip boundary erosion + small-component cleanup for 30m-resampled CDL years")
-    parser.add_argument("--erode-iter", type=int, default=1)
-    parser.add_argument("--min-size", type=int, default=4)
     parser.add_argument("--unknown-value", type=int, default=255)
     parser.add_argument("--conf-threshold", type=int, default=55,
                         help="CDL confidence threshold (0-100). Pixels below this → unknown (Maleki et al. 2024 best: 55)")
@@ -972,9 +948,6 @@ if __name__ == "__main__":
         upload_workers   = args.upload_workers,
         download_workers = args.download_workers,
         majority_kernel  = args.majority_kernel,
-        erode            = not args.no_erode,
-        erode_iter       = args.erode_iter,
-        min_size         = args.min_size,
         unknown_value    = args.unknown_value,
         conf_threshold   = args.conf_threshold,
         no_conf_mask     = args.no_conf_mask,

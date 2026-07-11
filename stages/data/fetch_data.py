@@ -26,7 +26,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-_ROOT = Path(__file__).parent.parent
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
 sys.path.insert(0, str(_ROOT.parent))
 
 from crop_mapping_pipeline.config import GDRIVE_OAUTH_TOKEN
