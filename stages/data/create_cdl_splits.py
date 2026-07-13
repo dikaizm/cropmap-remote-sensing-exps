@@ -25,8 +25,8 @@ from pathlib import Path
 _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
 sys.path.insert(0, str(_ROOT.parent))
 
-from crop_mapping_pipeline.config import PROCESSED_DIR, SPATIAL_TEST_AREAS
-from crop_mapping_pipeline.stages.process_data import process_cdl
+from cropmap_pipeline.config import PROCESSED_DIR, SPATIAL_TEST_AREAS
+from cropmap_pipeline.stages.process_data import process_cdl
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger(__name__)

@@ -2,7 +2,7 @@
 
 Usage:
     python stages/verify_tiles.py
-    python stages/verify_tiles.py --data-dir /workspace/crop_mapping_pipeline/data/processed
+    python stages/verify_tiles.py --data-dir /workspace/cropmap_pipeline/data/processed
     python stages/verify_tiles.py --years 2022
     python stages/verify_tiles.py --years 2022 2023 --tile-size 512
 """

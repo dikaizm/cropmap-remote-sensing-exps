@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 
-from crop_mapping_pipeline.config import S2_BAND_NAMES, S2_NODATA, KEEP_CLASSES, SAMPLE_FRACTION, CDL_CLASS_NAMES
+from cropmap_pipeline.config import S2_BAND_NAMES, S2_NODATA, KEEP_CLASSES, SAMPLE_FRACTION, CDL_CLASS_NAMES
 
 log = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ def save_selection(
             seen[ch] = None
     union: list[str] = list(seen.keys())
 
-    from crop_mapping_pipeline.config import CDL_CLASS_NAMES
+    from cropmap_pipeline.config import CDL_CLASS_NAMES
     from datetime import datetime
 
     if score_threshold is not None:
@@ -354,7 +354,7 @@ def log_selection_run(
     from datetime import datetime
 
     import mlflow
-    from crop_mapping_pipeline.config import (
+    from cropmap_pipeline.config import (
         MLFLOW_TRACKING_URI, MLFLOW_EXPERIMENT_FEATURE, CDL_CLASS_NAMES,
     )
 

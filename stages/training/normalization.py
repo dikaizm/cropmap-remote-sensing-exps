@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 import rasterio
 
-from crop_mapping_pipeline.config import N_BANDS_PER_DATE, S2_NODATA, S2_BAND_NAMES
+from cropmap_pipeline.config import N_BANDS_PER_DATE, S2_NODATA, S2_BAND_NAMES
 
 log = logging.getLogger(__name__)
 

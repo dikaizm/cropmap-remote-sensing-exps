@@ -10,7 +10,7 @@ import rasterio
 _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
 sys.path.insert(0, str(_ROOT.parent))
 
-from crop_mapping_pipeline.config import (
+from cropmap_pipeline.config import (
     S2_BAND_NAMES, N_BANDS_PER_DATE, VEGE_BANDS, KEEP_CLASSES,
 )
 

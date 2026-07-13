@@ -36,15 +36,15 @@ _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py")
 sys.path.insert(0, str(_ROOT.parent))
 os.environ.setdefault("MLFLOW_DISABLE_TELEMETRY", "true")
 
-from crop_mapping_pipeline.config import (
+from cropmap_pipeline.config import (
     PATCH_SIZE, STRIDE, MIN_VALID_FRAC, KEEP_CLASSES, REMAP_LUT, NUM_CLASSES,
     VAL_FRAC, TEST_FRAC, SEED, BLOCK_SIZE, MIN_CLASS_FRAC, CDL_CLASS_NAMES,
     S2_BAND_NAMES, S2_NODATA,
 )
-from crop_mapping_pipeline.stages.data.spatial_split import (
+from cropmap_pipeline.stages.data.spatial_split import (
     compute_split_from_cdl, _save_block_split_artifacts,
 )
-from crop_mapping_pipeline.stages.data.valid_dates import filter_valid_s2_dates
+from cropmap_pipeline.stages.data.valid_dates import filter_valid_s2_dates
 
 log = logging.getLogger("materialize_split")
 

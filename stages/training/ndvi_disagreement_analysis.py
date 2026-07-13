@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 
-from crop_mapping_pipeline.config import (
+from cropmap_pipeline.config import (
     KEEP_CLASSES, CDL_CLASS_NAMES, S2_BAND_NAMES, S2_TRAIN_DIR, S2_NODATA,
 )
 

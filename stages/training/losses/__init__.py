@@ -6,16 +6,16 @@ CLI key (``--loss``) → description
     dynamic_balanced   — DynamicEffectiveClassBalanced (per-batch Cui+2019 weights; DECB-CE, primary)
 
 Usage:
-    from crop_mapping_pipeline.stages.training.losses import (
+    from cropmap_pipeline.stages.training.losses import (
         build_wce, build_focal_tversky, build_dynamic_balanced,
     )
 """
 
-from crop_mapping_pipeline.stages.training.losses.wce              import build_wce
-from crop_mapping_pipeline.stages.training.losses.focal_tversky    import (
+from cropmap_pipeline.stages.training.losses.wce              import build_wce
+from cropmap_pipeline.stages.training.losses.focal_tversky    import (
     FocalTverskyLoss, effective_number_weights, build_focal_tversky,
 )
-from crop_mapping_pipeline.stages.training.losses.dynamic_balanced import (
+from cropmap_pipeline.stages.training.losses.dynamic_balanced import (
     DynamicEffectiveClassBalancedLoss, build_dynamic_balanced,
 )
 

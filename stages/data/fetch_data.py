@@ -29,7 +29,7 @@ from pathlib import Path
 _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
 sys.path.insert(0, str(_ROOT.parent))
 
-from crop_mapping_pipeline.config import GDRIVE_OAUTH_TOKEN
+from cropmap_pipeline.config import GDRIVE_OAUTH_TOKEN
 
 log = logging.getLogger(__name__)
 
@@ -462,7 +462,7 @@ def verify(output_dir: str, years: list = None) -> bool:
 def generate_oauth_token():
     import pickle
     from google_auth_oauthlib.flow import InstalledAppFlow
-    from crop_mapping_pipeline.config import GDRIVE_OAUTH_SECRET
+    from cropmap_pipeline.config import GDRIVE_OAUTH_SECRET
 
     flow  = InstalledAppFlow.from_client_secrets_file(
         str(GDRIVE_OAUTH_SECRET),
@@ -511,7 +511,7 @@ if __name__ == "__main__":
         handlers=[logging.StreamHandler()],
     )
 
-    from crop_mapping_pipeline.config import (
+    from cropmap_pipeline.config import (
         GDRIVE_PROCESSED_S2_V6_FOLDER_IDS,
         GDRIVE_RAW_S2_V5_FOLDER_IDS,
         GDRIVE_PROCESSED_CDL_FOLDER_ID_V6,
@@ -555,7 +555,7 @@ if __name__ == "__main__":
 
     # Spatial test areas — flat folders → {s2_output_dir}/test_a/ and test_b/
     if args.test_areas and not args.cdl_only:
-        from crop_mapping_pipeline.config import (
+        from cropmap_pipeline.config import (
             GDRIVE_S2_TEST_A_FOLDER_ID,
             GDRIVE_S2_TEST_B_FOLDER_ID,
         )

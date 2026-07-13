@@ -1,4 +1,4 @@
-# crop_mapping_pipeline
+# cropmap_pipeline
 
 End-to-end pipeline for crop type mapping using multi-temporal Sentinel-2 imagery and USDA Cropland Data Layer (CDL) labels. Covers data processing, band selection, and segmentation model training.
 
@@ -10,7 +10,7 @@ End-to-end pipeline for crop type mapping using multi-temporal Sentinel-2 imager
 ## Project Structure
 
 ```
-crop_mapping_pipeline/
+cropmap_pipeline/
 ├── pipeline.py              # CLI entry point — orchestrates all stages
 ├── config.py                # All hyperparameters, file paths, and GDrive IDs
 ├── requirements.txt
@@ -47,7 +47,7 @@ crop_mapping_pipeline/
 
 ```bash
 git clone <repo-url>
-cd crop_mapping_pipeline
+cd cropmap_pipeline
 
 python -m venv .venv
 source .venv/bin/activate
@@ -153,7 +153,7 @@ Use this when only raw GEE-exported S2 TIFs exist. Processes and uploads year by
 
 **Step 1 — Run Stage 1 locally (CPU, no GPU needed)**
 ```bash
-PYTHONPATH=. python crop_mapping_pipeline/stages/feature_analysis.py \
+PYTHONPATH=. python cropmap_pipeline/stages/feature_analysis.py \
     --stage 1 \
     --data-dir /path/to/local/processed
 ```
@@ -166,7 +166,7 @@ scp data/processed/stage1v2_candidates.json user@gpu-server:/data/processed/
 
 **Step 3 — Run Stage 2 on server (GPU)**
 ```bash
-PYTHONPATH=. python crop_mapping_pipeline/stages/feature_analysis.py \
+PYTHONPATH=. python cropmap_pipeline/stages/feature_analysis.py \
     --stage 2 \
     --data-dir /data/processed
 ```
@@ -209,38 +209,38 @@ kill $(cat logs/pipeline_<timestamp>.pid)
 ### Option B — Direct Python
 
 ```bash
-PYTHONPATH=. python -m crop_mapping_pipeline.pipeline                         # all stages
-PYTHONPATH=. python -m crop_mapping_pipeline.pipeline --stages fetch feature  # fetch + selection
-PYTHONPATH=. python -m crop_mapping_pipeline.pipeline --stages train          # training only
-PYTHONPATH=. python -m crop_mapping_pipeline.pipeline --data-dir /mnt/data    # custom data dir
+PYTHONPATH=. python -m cropmap_pipeline.pipeline                         # all stages
+PYTHONPATH=. python -m cropmap_pipeline.pipeline --stages fetch feature  # fetch + selection
+PYTHONPATH=. python -m cropmap_pipeline.pipeline --stages train          # training only
+PYTHONPATH=. python -m cropmap_pipeline.pipeline --data-dir /mnt/data    # custom data dir
 ```
 
 ### Option C — Run stages individually
 
 ```bash
 # Processing (Workflow B only)
-python crop_mapping_pipeline/stages/process_data.py --years 2022
-python crop_mapping_pipeline/stages/process_data.py --years 2022 2023 2024 --skip-upload
-python crop_mapping_pipeline/stages/process_data.py --years 2022 --skip-delete   # keep raw
+python cropmap_pipeline/stages/process_data.py --years 2022
+python cropmap_pipeline/stages/process_data.py --years 2022 2023 2024 --skip-upload
+python cropmap_pipeline/stages/process_data.py --years 2022 --skip-delete   # keep raw
 
 # Fetch (download processed files from GDrive)
-python crop_mapping_pipeline/stages/fetch_data.py                          # all years
-python crop_mapping_pipeline/stages/fetch_data.py --years 2022             # one year only
-python crop_mapping_pipeline/stages/fetch_data.py --years 2022 2023        # multiple years
-python crop_mapping_pipeline/stages/fetch_data.py --years 2022 --delete    # download then delete
-python crop_mapping_pipeline/stages/fetch_data.py --delete                 # delete all downloaded files
-python crop_mapping_pipeline/stages/fetch_data.py --verify-only            # check what's present
+python cropmap_pipeline/stages/fetch_data.py                          # all years
+python cropmap_pipeline/stages/fetch_data.py --years 2022             # one year only
+python cropmap_pipeline/stages/fetch_data.py --years 2022 2023        # multiple years
+python cropmap_pipeline/stages/fetch_data.py --years 2022 --delete    # download then delete
+python cropmap_pipeline/stages/fetch_data.py --delete                 # delete all downloaded files
+python cropmap_pipeline/stages/fetch_data.py --verify-only            # check what's present
 
 # Feature analysis
-python crop_mapping_pipeline/stages/feature_analysis.py --stage 1              # Stage 1 only (local)
-python crop_mapping_pipeline/stages/feature_analysis.py --stage 2              # Stage 2 only (server)
-python crop_mapping_pipeline/stages/feature_analysis.py --force                # re-run both
+python cropmap_pipeline/stages/feature_analysis.py --stage 1              # Stage 1 only (local)
+python cropmap_pipeline/stages/feature_analysis.py --stage 2              # Stage 2 only (server)
+python cropmap_pipeline/stages/feature_analysis.py --force                # re-run both
 
 # Training
-python crop_mapping_pipeline/stages/train_segmentation.py
-python crop_mapping_pipeline/stages/train_segmentation.py --exp A B
-python crop_mapping_pipeline/stages/train_segmentation.py --arch segformer
-python crop_mapping_pipeline/stages/train_segmentation.py --skip-viz
+python cropmap_pipeline/stages/train_segmentation.py
+python cropmap_pipeline/stages/train_segmentation.py --exp A B
+python cropmap_pipeline/stages/train_segmentation.py --arch segformer
+python cropmap_pipeline/stages/train_segmentation.py --skip-viz
 ```
 
 ---

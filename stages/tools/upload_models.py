@@ -19,7 +19,7 @@ import os
 import sys
 from pathlib import Path
 
-_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())   # crop_mapping_pipeline/
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())   # cropmap_pipeline/
 sys.path.insert(0, str(_ROOT.parent))
 
 log = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ def _build_drive_service():
     from googleapiclient.discovery import build
     from google.auth.transport.requests import Request
 
-    from crop_mapping_pipeline.config import GDRIVE_OAUTH_TOKEN
+    from cropmap_pipeline.config import GDRIVE_OAUTH_TOKEN
     if not GDRIVE_OAUTH_TOKEN.exists():
         raise FileNotFoundError(
             f"OAuth token not found: {GDRIVE_OAUTH_TOKEN}\n"
@@ -92,7 +92,7 @@ def upload_and_tag(experiment_name: str, dry_run: bool = False) -> None:
 
     import mlflow
     from mlflow.tracking import MlflowClient
-    from crop_mapping_pipeline.config import (
+    from cropmap_pipeline.config import (
         MLFLOW_TRACKING_URI, MODELS_DIR, GDRIVE_MODELS_FOLDER_ID,
     )
 

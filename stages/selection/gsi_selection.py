@@ -15,11 +15,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from crop_mapping_pipeline.config import (
+from cropmap_pipeline.config import (
     KEEP_CLASSES, CDL_CLASS_NAMES, S2_BAND_NAMES,
     SELECT_GSI_DIRECT_JSON, SELECT_GSI_DIRECT_BANDS,
 )
-from crop_mapping_pipeline.stages.selection._utils import (
+from cropmap_pipeline.stages.selection._utils import (
     build_channel_names, sample_pixels, save_selection, log_selection_run, save_per_class_table,
 )
 

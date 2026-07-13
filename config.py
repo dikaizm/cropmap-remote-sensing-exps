@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 
 # ── Project root ───────────────────────────────────────────────────────────────
-PROJECT_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())   # crop_mapping_pipeline/
+PROJECT_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())   # cropmap_pipeline/
 
 # ── Data paths ─────────────────────────────────────────────────────────────────
 PROCESSED_DIR    = PROJECT_ROOT / "data" / "processed"

@@ -54,13 +54,13 @@ _ROOT = next(_p for _p in pathlib.Path(__file__).resolve().parents if (_p / "con
 load_dotenv(_ROOT / ".env")
 sys.path.insert(0, str(_ROOT.parent))
 
-from crop_mapping_pipeline.config import (
+from cropmap_pipeline.config import (
     S2_PROCESSED_DIR, CDL_BY_YEAR, PROCESSED_DIR,
     S2_NODATA, KEEP_CLASSES,
     GDRIVE_OAUTH_TOKEN,
 )
-from crop_mapping_pipeline.utils.constants import USDA_CDL_NAMES
-from crop_mapping_pipeline.utils.label import (
+from cropmap_pipeline.utils.constants import USDA_CDL_NAMES
+from cropmap_pipeline.utils.label import (
     label_filtering, majority_filter_labels,
 )
 
@@ -614,7 +614,7 @@ def main(
 
     years = years or ALL_YEARS
 
-    from crop_mapping_pipeline.config import (
+    from cropmap_pipeline.config import (
         GDRIVE_PROCESSED_V5_FOLDER_ID, GDRIVE_PROCESSED_CDL_FOLDER_ID,
         GDRIVE_PROCESSED_CDL_FOLDER_ID_V6, CDL_DOWNLOAD_URLS_10M,
         GDRIVE_RAW_S2_V5_FOLDER_ID as GDRIVE_RAW_S2_V2_FOLDER_ID,
@@ -676,7 +676,7 @@ def main(
 
             # ── Step 4: Download missing dates from GDrive raw ────────────────
             try:
-                from crop_mapping_pipeline.stages.fetch_data import (
+                from cropmap_pipeline.stages.fetch_data import (
                     list_dates_by_year, download_date_keys,
                 )
                 gdrive_date_keys = set(
@@ -725,7 +725,7 @@ def main(
 
         # ── CDL processing ────────────────────────────────────────────────────
         from glob import glob as _glob
-        from crop_mapping_pipeline.config import GDRIVE_RAW_CDL_FOLDER_ID, CDL_DOWNLOAD_URLS
+        from cropmap_pipeline.config import GDRIVE_RAW_CDL_FOLDER_ID, CDL_DOWNLOAD_URLS
         cdl_dir = (pathlib.Path(raw_cdl_dir) if raw_cdl_dir
                    else _ROOT / "data" / "raw" / "cdl")
 
@@ -882,7 +882,7 @@ def main(
 def generate_oauth_token():
     import pickle
     from google_auth_oauthlib.flow import InstalledAppFlow
-    from crop_mapping_pipeline.config import GDRIVE_OAUTH_SECRET
+    from cropmap_pipeline.config import GDRIVE_OAUTH_SECRET
 
     flow  = InstalledAppFlow.from_client_secrets_file(
         str(GDRIVE_OAUTH_SECRET),

@@ -18,8 +18,8 @@ from pathlib import Path
 _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
 sys.path.insert(0, str(_ROOT.parent))
 
-from crop_mapping_pipeline.config import CDL_TRAIN
-from crop_mapping_pipeline.utils.label import majority_filter_labels
+from cropmap_pipeline.config import CDL_TRAIN
+from cropmap_pipeline.utils.label import majority_filter_labels
 
 
 def main():

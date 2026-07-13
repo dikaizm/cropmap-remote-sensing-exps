@@ -4,10 +4,10 @@ import re
 import sys
 from pathlib import Path
 
-_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())   # crop_mapping_pipeline/
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())   # cropmap_pipeline/
 sys.path.insert(0, str(_ROOT.parent))
 
-from crop_mapping_pipeline.config import S2_BAND_NAMES, N_BANDS_PER_DATE
+from cropmap_pipeline.config import S2_BAND_NAMES, N_BANDS_PER_DATE
 
 import logging
 log = logging.getLogger(__name__)

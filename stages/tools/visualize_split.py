@@ -30,7 +30,7 @@ from torch.utils.data import random_split, ConcatDataset
 _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
 sys.path.insert(0, str(_ROOT.parent))
 
-from crop_mapping_pipeline.config import (
+from cropmap_pipeline.config import (
     S2_TRAIN_DIR, CDL_TRAIN,
     PATCH_SIZE, STRIDE, MIN_VALID_FRAC,
     KEEP_CLASSES, CLASS_REMAP, NUM_CLASSES, CDL_CLASS_NAMES,
