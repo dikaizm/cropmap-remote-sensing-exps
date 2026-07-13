@@ -7,7 +7,6 @@ Default T = 0.5 (Wei et al. 2023).
 """
 
 import argparse
-import json
 import logging
 import os
 import pathlib
@@ -20,7 +19,6 @@ _ROOT = next(_p for _p in pathlib.Path(__file__).resolve().parents if (_p / "con
 sys.path.insert(0, str(_ROOT.parent))
 
 os.environ["MLFLOW_DISABLE_TELEMETRY"] = "true"
-import mlflow
 
 from cropmap_pipeline.utils.mlflow_utils import patch_artifact_logging
 patch_artifact_logging()
@@ -33,28 +31,9 @@ from cropmap_pipeline.config import (
     GSI_CANDIDATES_JSON as _GSI_CANDIDATES_JSON,
     KEEP_CLASSES,
     LOGS_DIR as _LOGS_DIR,
-    MAX_BANDS_PER_CROP,
-    MAX_DATES_PER_CROP,
-    MLFLOW_EXPERIMENT_FEATURE,
-    MLFLOW_TRACKING_URI,
     PROCESSED_DIR as _PROCESSED_DIR,
-    REMAP_LUT,
-    RF_IMPORTANCE_THRESH,
-    RF_MAX_PIXELS,
-    RF_N_ESTIMATORS,
-    S2_BAND_NAMES,
-    S2_NODATA,
     S2_TRAIN_DIR as _S2_TRAIN_DIR,
-    SAMPLE_FRACTION,
-    SELECT_GSI_DIRECT_JSON,
-    SELECT_GSI_DIRECT_BANDS,
-    SELECT_RF_DIRECT_JSON,
-    SELECT_RF_DIRECT_BANDS,
-    TEST_YEAR,
-    TOP_BANDS_PER_CROP,
-    TOP_DATES_PER_CROP,
     TRAIN_YEARS,
-    VEGE_BANDS,
 )
 
 log = logging.getLogger(__name__)
@@ -96,8 +75,13 @@ def _glob_s2_train() -> list[str]:
     return valid
 
 
-def get_train_year_inputs() -> tuple[str, list[str], str]:
-    """Training data from flat train/ dir."""
+def get_train_year_inputs(data_dir: str | None = None) -> tuple[str, list[str], str]:
+    """Training data from flat train/ dir.
+
+    data_dir: optional processed-data root override (expects s2/2024 + cdl/). When
+    given, reconfigures the module paths before globbing; None keeps config defaults.
+    """
+    configure_data_dir(data_dir)
     s2_files = _glob_s2_train()
     assert s2_files, f"No S2 files in {S2_TRAIN_DIR}"
     cdl_path = str(CDL_TRAIN)
@@ -105,10 +89,13 @@ def get_train_year_inputs() -> tuple[str, list[str], str]:
     return TRAIN_YEARS[0], s2_files, cdl_path
 
 
-def get_stage1_inputs() -> list[tuple[str, list[str], str]]:
+def get_stage1_inputs(data_dir: str | None = None) -> list[tuple[str, list[str], str]]:
     """Training data for GSI band scoring — flat train/ dir.
     Returns [(year, s2_files, cdl_path)].
+
+    data_dir: optional processed-data root override (s2/2024 + cdl/); None keeps defaults.
     """
+    configure_data_dir(data_dir)
     s2_files = _glob_s2_train()
     cdl_path = str(CDL_TRAIN)
     if not s2_files:
