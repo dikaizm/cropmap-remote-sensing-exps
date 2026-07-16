@@ -1,10 +1,11 @@
 """Experiment registry for Stage 3 training.
 
-Four experiments:
+Five experiments:
   single_date — peak NDVI date, ALL bands (single-date baseline)
   mt_ndvi     — 4 calendar dates, ALL VEGE_BANDS (multi-temporal baseline, no selection)
   gsi         — multi-temporal, GSI-direct top-K channels
   rf          — multi-temporal, RF-importance top-K channels (multi-class MDI)
+  full        — full multi-temporal stack, ALL dates x ALL bands, no selection (upper-bound baseline)
 
 To add an experiment:
   1. Build its band indices in main() of train_segmentation.py
@@ -41,6 +42,7 @@ def build_registry(
     mt_base_idx     = None,  mt_base_names     = None,  phenol_map      = None,
     gsi_idx         = None,  gsi_names         = None,
     rf_idx          = None,  rf_names          = None,
+    full_idx        = None,  full_names        = None,
 ) -> dict[str, ExperimentConfig]:
     """Build and return the experiment registry.
 
@@ -78,6 +80,14 @@ def build_registry(
             description = f"RF-direct top-K, {len(rf_idx)}ch — RF importance selection",
             band_indices= rf_idx,
             band_names  = rf_names,
+        )
+
+    if full_idx is not None:
+        reg["full"] = ExperimentConfig(
+            key         = "full",
+            description = f"Full multi-temporal stack, all dates x all bands, no selection (upper-bound baseline) — {len(full_idx)}ch",
+            band_indices= full_idx,
+            band_names  = full_names,
         )
 
     return reg

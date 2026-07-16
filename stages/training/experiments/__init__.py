@@ -12,6 +12,9 @@ from cropmap_pipeline.stages.training.experiments.mt_ndvi import (
     build_naive_multitemporal_indices,
     build_exp_B_indices,          # backwards-compat
 )
+from cropmap_pipeline.stages.training.experiments.full_stack import (
+    build_full_stack_indices,
+)
 from cropmap_pipeline.stages.training.experiments.registry import (
     ExperimentConfig,
     build_registry,
@@ -25,6 +28,7 @@ __all__ = [
     "build_exp_A_indices",
     "build_naive_multitemporal_indices",
     "build_exp_B_indices",
+    "build_full_stack_indices",
     "ExperimentConfig",
     "build_registry",
     "expand_exp_keys",

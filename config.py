@@ -17,6 +17,11 @@ FIGURES_DIR      = PROJECT_ROOT / "documents" / "thesis" / "figures"
 LOGS_DIR         = PROJECT_ROOT / "logs"
 PRELOAD_CACHE_DIR = PROCESSED_DIR / "preload_cache"
 PRELOAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Peak-RAM ceiling for PreloadedDataset cache builds (read threads + normalisation
+# chunk). None = auto-detect from currently-available system memory at build time
+# (see datasets._resolve_ram_budget). Set a number (GB) or the PRELOAD_RAM_BUDGET_GB
+# env var to pin it explicitly on machines where auto-detection misbehaves.
+PRELOAD_RAM_BUDGET_GB = None
 
 # S2 data organised by role, not year
 S2_TRAIN_DIR = PROCESSED_DIR / "s2" / "2024"   # main training area (all dates, flat; v6.1 processed S2)

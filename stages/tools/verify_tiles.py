@@ -100,9 +100,9 @@ def main():
         if not yr_dir.exists():
             print(f"WARN: year dir missing: {yr_dir}", file=sys.stderr)
             continue
-        yr_files = sorted(yr_dir.glob("S2H_*_processed.tif"))
+        yr_files = sorted(yr_dir.glob("S2H_*.tif"))
         if not yr_files:
-            print(f"WARN: no processed TIFs in {yr_dir}", file=sys.stderr)
+            print(f"WARN: no S2 TIFs in {yr_dir}", file=sys.stderr)
         files.extend((yr, f) for f in yr_files)
 
     if not files:
@@ -130,7 +130,7 @@ def main():
             path, ok, err, tiles, elapsed = future.result()
             results[(yr, f)] = (ok, err, tiles, elapsed)
             done += 1
-            date = f.stem.replace("_processed", "")
+            date = f.stem
             status = "OK  " if ok else "FAIL"
             print(
                 f"[{done:>3}/{total}  {done/total*100:5.1f}%]  "

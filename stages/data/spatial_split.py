@@ -222,7 +222,7 @@ def _block_spatial_split(datasets_raw, block_size, val_frac, test_frac,
                  + " / ".join(f"{info['blocks_per_split'][s]} {s}" for s in splits))
         for s in splits:
             bf = below_floor[s]
-            warn = f"  ⚠ below {min_class_frac:.0%} floor: classes {bf}" if bf else ""
+            warn = f"  below {min_class_frac:.0%} floor: classes {bf}" if bf else ""
             log.info(f"    {s:5s}: {info['patches_per_split'][s]:>5d} patches, "
                      f"class-px frac={np.round(current[s] / total_safe, 3).tolist()}{warn}")
 

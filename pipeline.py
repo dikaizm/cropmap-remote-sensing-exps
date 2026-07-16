@@ -173,7 +173,7 @@ def run_pipeline(stages, force=False, data_dir=None, years=None, log_file=None):
     log.info("=" * 60)
     any_error = False
     for stage, r in results.items():
-        status = "✅ OK" if r["status"] == "ok" else "❌ ERROR"
+        status = "OK" if r["status"] == "ok" else "ERROR"
         log.info(f"  {stage:10s}  {status}  ({r['elapsed_s']}s)")
         if r["status"] != "ok":
             any_error = True

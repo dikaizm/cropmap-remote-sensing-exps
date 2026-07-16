@@ -122,7 +122,7 @@ This pipeline supports two deployment patterns depending on whether processed fi
 
 ### Workflow A — Processed files already on GDrive
 
-Use this when `*_processed.tif` S2 files and filtered CDL files are already uploaded to GDrive (e.g. processed locally first).
+Use this when S2 files and filtered CDL files are already uploaded to GDrive (e.g. processed locally first).
 
 ```
 [Local]   Stage 1  →  stage1v2_candidates.json
@@ -252,20 +252,20 @@ python cropmap_pipeline/stages/train_segmentation.py --skip-viz
 Downloads processed Sentinel-2 GeoTIFFs and CDL rasters from Google Drive using `gdown`. Use this when processed files are already on GDrive.
 
 **Inputs:** `GDRIVE_FILES` IDs in `config.py`
-**Outputs:** `data/processed/s2/*_processed.tif`, `data/processed/cdl/cdl_*_study_area_filtered.tif`
+**Outputs:** `data/processed/s2/S2H_*.tif`, `data/processed/cdl/cdl_*_study_area_filtered.tif`
 
 ---
 
 ### Stage 0.5 — Process (`stages/process_data.py`)
 
-Processes raw GEE-exported S2 TIFs and raw CDL rasters year by year. Designed for storage-constrained GPU servers — processes one year, uploads to GDrive, then deletes raw files before moving to the next year.
+Uploads raw GEE-exported S2 TIFs as-is (no NoData assignment, no merging — GEE already exports one clean file per date) and processes raw CDL rasters year by year. Designed for storage-constrained GPU servers — validates+uploads one year, then deletes local raw files before moving to the next year.
 
 **CDL processing:**
 1. Reproject EPSG:5070 → EPSG:4326, clip to S2 grid, resample to ~10 m (nearest neighbour to preserve labels)
 2. Filter to `KEEP_CLASSES`, set all other pixels to 0 (background)
 
-**S2 processing:**
-- Replace negative / NaN / Inf pixels with NoData sentinel (`-9999`), cast to `float32`
+**S2 handling:**
+- Validate each raw file has a minimum fraction of valid pixels, then upload unmodified under its original filename
 
 **GDrive upload setup:**
 1. Create a Google Cloud service account and enable the Drive API
@@ -274,7 +274,7 @@ Processes raw GEE-exported S2 TIFs and raw CDL rasters year by year. Designed fo
 4. Fill in `GDRIVE_PROCESSED_S2_FOLDER_ID` and `GDRIVE_PROCESSED_CDL_FOLDER_ID` in `config.py`
 
 **Inputs:** Raw S2 TIFs (`S2H_YYYY_YYYY_MM_DD.tif`), raw CDL TIFs (`YYYY_30m_cdls/*.tif`)
-**Outputs:** Processed TIFs uploaded to GDrive + deleted locally
+**Outputs:** Raw S2 TIFs uploaded to GDrive + deleted locally; processed CDL TIFs
 
 ---
 
@@ -356,7 +356,7 @@ After a full pipeline run:
 
 ```
 data/processed/
-├── s2/                              # processed S2 GeoTIFFs (*_processed.tif)
+├── s2/                              # S2 GeoTIFFs, uploaded as-is (S2H_*.tif)
 ├── cdl/                             # CDL filtered rasters
 ├── stage1v2_candidates.json         # Stage 1 → Stage 2 handoff
 ├── stage2v2_per_crop_results.csv    # per-crop band selection results

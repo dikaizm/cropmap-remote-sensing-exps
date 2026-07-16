@@ -1,7 +1,9 @@
 """
-Stage 0.5b (v6) — Process single-file-per-date GEE S2 exports + resolution-aware CDL.
+Stage 0.5b (v6) — Upload single-file-per-date GEE S2 exports as-is + resolution-aware CDL.
 
-S2 handling identical to v5. CDL handling now branches on native resolution:
+S2 files are uploaded unmodified (no NoData assignment, no merging — GEE already
+exports one clean file per date) and kept under their original filename
+(S2H_{year}_{YYYY_MM_DD}.tif). CDL handling branches on native resolution:
   - 2022 / 2023: only 30m CDL exists → reproject (nearest) to S2 grid, filter
     classes, confidence mask (pixels < 85% → unknown=255), then majority filter
     (k=3) to clean up 30m→10m resampling artifacts.
@@ -56,7 +58,7 @@ sys.path.insert(0, str(_ROOT.parent))
 
 from cropmap_pipeline.config import (
     S2_PROCESSED_DIR, CDL_BY_YEAR, PROCESSED_DIR,
-    S2_NODATA, KEEP_CLASSES,
+    KEEP_CLASSES,
     GDRIVE_OAUTH_TOKEN,
 )
 from cropmap_pipeline.utils.constants import USDA_CDL_NAMES
@@ -115,56 +117,6 @@ def _has_valid_data(path: str, min_valid_frac: float = 0.01,
     frac  = valid.sum() / valid.size
     log.info("  Valid pixel fraction (sample): %.2f%%", frac * 100)
     return frac >= min_valid_frac
-
-
-# ── NoData assignment + compression + pyramids ──────────────────────────────────
-
-def assign_nodata(in_path: str, out_path: str, overwrite: bool = False) -> str:
-    """
-    Assign NoData (negative/NaN/Inf → S2_NODATA), cast to float32,
-    apply DEFLATE+predictor=3 compression, build overviews.
-    Band-by-band to avoid loading full raster into RAM.
-    """
-    out = Path(out_path)
-    if out.exists() and not overwrite:
-        log.info("  Already processed: %s", out.name)
-        return out_path
-
-    out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(".tmp.tif")
-
-    try:
-        with rasterio.open(in_path) as src:
-            profile = src.profile.copy()
-            profile.update(
-                dtype      = "float32",
-                nodata     = S2_NODATA,
-                compress   = "deflate",
-                predictor  = 3,
-                tiled      = True,
-                blockxsize = 256,
-                blockysize = 256,
-            )
-            total_invalid = 0
-            with rasterio.open(tmp, "w", **profile) as dst:
-                for band in range(1, src.count + 1):
-                    data              = src.read(band).astype(np.float32)
-                    invalid           = (data < 0) | np.isnan(data) | np.isinf(data)
-                    data[invalid]     = S2_NODATA
-                    total_invalid    += int(invalid.sum())
-                    dst.write(data, band)
-
-        with rasterio.open(tmp, "r+") as dst:
-            dst.build_overviews([4, 8, 16, 32], Resampling.average)
-            dst.update_tags(ns="rio_overview", resampling="average")
-
-        tmp.rename(out)
-    except Exception:
-        tmp.unlink(missing_ok=True)
-        raise
-
-    log.info("  Processed: %s  (invalid_px=%s)", out.name, f"{total_invalid:,}")
-    return out_path
 
 
 # ── CDL processing ───────────────────────────────────────────────────────────────
@@ -460,48 +412,42 @@ _SENTINEL = object()
 def _pipeline_year(
     raw_files      : dict,    # {date_key: raw_path}
     yr             : str,
-    s2_out_dir     : Path,
     skip_upload    : bool = False,
     skip_delete    : bool = False,
-    overwrite      : bool = False,
     process_workers: int  = 2,
     upload_workers : int  = 1,
     s2_folder_ids  : dict = None,
     cdl_folder_id  : str  = None,
 ) -> tuple:
     """
-    2-stage concurrent pipeline per date:
-      Stage 1 (process_workers threads): assign_nodata
-      Stage 2 (upload_workers threads):  upload to GDrive → delete raw
-    Returns (processed_paths, s2_ref_path).
+    2-stage concurrent pipeline per date, S2 files uploaded as-is (no NoData
+    assignment, no merging — GEE already exports one clean file per date):
+      Stage 1 (process_workers threads): validate raw file has data
+      Stage 2 (upload_workers threads):  upload raw to GDrive → delete local raw
+    Returns (uploaded_paths, s2_ref_path).
     """
-    s2_out_dir.mkdir(parents=True, exist_ok=True)
-
     upload_q: Queue         = Queue(maxsize=process_workers + 2)
-    processed_paths: list   = []
+    uploaded_paths: list    = []
     s2_ref_path: list       = [None]
     lock                    = threading.Lock()
     errors: list            = []
 
-    # ── Stage 1: assign nodata ────────────────────────────────────────────────
+    # ── Stage 1: validate ─────────────────────────────────────────────────────
     def _process_date(date_key: str, raw_path: Path) -> None:
-        processed_path = s2_out_dir / f"{date_key}_processed.tif"
         try:
             if not _has_valid_data(str(raw_path)):
                 log.warning("[%s] No valid data — skipped", date_key)
                 return
 
-            assign_nodata(str(raw_path), str(processed_path), overwrite=overwrite)
-
             with lock:
-                processed_paths.append(str(processed_path))
+                uploaded_paths.append(str(raw_path))
                 if s2_ref_path[0] is None:
-                    s2_ref_path[0] = str(processed_path)
+                    s2_ref_path[0] = str(raw_path)
 
-            upload_q.put((date_key, str(raw_path), str(processed_path)))
+            upload_q.put((date_key, str(raw_path)))
 
         except Exception as exc:
-            log.error("[%s] Process error: %s", date_key, exc)
+            log.error("[%s] Validate error: %s", date_key, exc)
             errors.append(f"{date_key}: {exc}")
 
     # ── Stage 2: upload + delete ──────────────────────────────────────────────
@@ -528,10 +474,10 @@ def _pipeline_year(
                 upload_q.task_done()
                 break
 
-            date_key, raw_path, processed_path = item
+            date_key, raw_path = item
             try:
                 if service and s2_folder:
-                    upload_file(processed_path, s2_folder, service)
+                    upload_file(raw_path, s2_folder, service)
                 elif not skip_upload:
                     log.warning("[%s] No GDrive folder — upload skipped", date_key)
 
@@ -550,7 +496,7 @@ def _pipeline_year(
     for t in upload_threads:
         t.start()
 
-    log.info("[%s] Pipeline start — %d dates, %d process workers, %d upload workers",
+    log.info("[%s] Pipeline start — %d dates, %d validate workers, %d upload workers",
              yr, len(raw_files), process_workers, upload_workers)
 
     with ThreadPoolExecutor(max_workers=process_workers, thread_name_prefix="proc") as pool:
@@ -574,9 +520,9 @@ def _pipeline_year(
         for e in errors:
             log.warning("  %s", e)
     else:
-        log.info("[%s] Pipeline done — %d date(s) processed", yr, len(processed_paths))
+        log.info("[%s] Pipeline done — %d date(s) uploaded", yr, len(uploaded_paths))
 
-    return processed_paths, s2_ref_path[0]
+    return uploaded_paths, s2_ref_path[0]
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────────
@@ -634,13 +580,11 @@ def main(
         _cdl_id = cdl_folder_id or GDRIVE_PROCESSED_CDL_FOLDER_ID
         _v3     = GDRIVE_PROCESSED_V5_FOLDER_ID
 
-        # ── CDL-only mode: skip all S2 steps, use existing processed S2 as grid ref ──
+        # ── CDL-only mode: skip all S2 steps, use existing uploaded S2 as grid ref ──
         # S2_PROCESSED_DIR is flat (organised by role, not year) — try year subdir
         # first for back-compat, then fall back to flat dir filtered by year.
         if cdl_only:
-            existing = sorted((S2_PROCESSED_DIR / yr).glob("*_processed.tif"))
-            if not existing:
-                existing = sorted((S2_PROCESSED_DIR / yr).glob("*.tif"))
+            existing = sorted((S2_PROCESSED_DIR / yr).glob("*.tif"))
             if not existing:
                 existing = sorted(S2_PROCESSED_DIR.glob(f"S2H_{yr}_*.tif"))
             if not existing:
@@ -667,7 +611,7 @@ def main(
             # ── Step 3: Filter to dates still needed ─────────────────────────
             needed_local = {
                 dk: path for dk, path in local_files.items()
-                if f"{dk}_processed.tif" not in already_uploaded
+                if f"{dk}.tif" not in already_uploaded
             }
             n_skipped = len(local_files) - len(needed_local)
             if n_skipped:
@@ -684,7 +628,7 @@ def main(
                 )
                 needed_gdrive = {
                     dk for dk in gdrive_date_keys
-                    if f"{dk}_processed.tif" not in already_uploaded
+                    if f"{dk}.tif" not in already_uploaded
                 }
                 to_download = needed_gdrive - set(local_files.keys())
                 if to_download:
@@ -698,7 +642,7 @@ def main(
                     local_files  = list_raw_files(s2_raw_dir, yr)
                     needed_local = {
                         dk: path for dk, path in local_files.items()
-                        if f"{dk}_processed.tif" not in already_uploaded
+                        if f"{dk}.tif" not in already_uploaded
                     }
             except Exception as exc:
                 log.warning("  GDrive raw listing/download failed (%s) — using local files only", exc)
@@ -707,21 +651,17 @@ def main(
                 log.info("  All dates for year %s already in processed_v3 — skipping", yr)
                 continue
 
-            s2_out_dir = S2_PROCESSED_DIR / yr
-
             all_processed, s2_ref_path = _pipeline_year(
                 raw_files       = needed_local,
                 yr              = yr,
-                s2_out_dir      = s2_out_dir,
                 skip_upload     = skip_upload,
                 skip_delete     = skip_delete,
-                overwrite       = overwrite,
                 process_workers = process_workers,
                 upload_workers  = upload_workers,
                 s2_folder_ids   = _s2_ids,
                 cdl_folder_id   = _cdl_id,
             )
-            log.info("  Processed %d date(s) for year %s", len(all_processed), yr)
+            log.info("  Uploaded %d date(s) for year %s", len(all_processed), yr)
 
         # ── CDL processing ────────────────────────────────────────────────────
         from glob import glob as _glob
@@ -898,7 +838,7 @@ def generate_oauth_token():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Process single-file-per-date GEE S2 exports: NoData → upload."
+        description="Upload single-file-per-date GEE S2 exports as-is + process CDL."
     )
     parser.add_argument("--years", nargs="+", default=None, choices=ALL_YEARS)
     parser.add_argument("--raw-s2-dir", default=None)

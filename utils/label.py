@@ -33,7 +33,7 @@ def majority_filter_labels(in_path, out_path, kernel_size=3):
     with rasterio.open(out_path, "w", **profile) as dst:
         dst.write(filtered, 1)
 
-    print(f"✅ Majority-filtered (k={kernel_size}) → {out_path}")
+    print(f"Majority-filtered (k={kernel_size}) → {out_path}")
 
 
 def label_filtering(in_path, out_path, keep_classes=[]):
@@ -53,4 +53,4 @@ def label_filtering(in_path, out_path, keep_classes=[]):
     with rasterio.open(out_path, "w", **profile) as dst:
         dst.write(filtered, 1)
 
-    print("✅ Saved filtered raster:", out_path)
+    print("Saved filtered raster:", out_path)

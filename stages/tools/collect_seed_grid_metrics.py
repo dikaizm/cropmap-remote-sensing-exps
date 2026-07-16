@@ -21,11 +21,11 @@ OUT_DIR       = os.path.join(os.path.dirname(__file__), "..", "documents", "thes
 CROPS = ["corn", "rice", "winter_wheat", "alfalfa", "tomatoes", "grapes", "almonds", "walnuts"]
 
 # Regex: exp_{expkey}[_seed{N}]_{arch}
-# expkey = single_date | mt_ndvi | gsi | rf
+# expkey = single_date | mt_ndvi | gsi | rf | full
 # seed   = optional integer
 # arch   = deeplabv3plus_cbam | segformer
 _RE = re.compile(
-    r"^exp_(?P<exp>single_date|mt_ndvi|gsi|rf)"
+    r"^exp_(?P<exp>single_date|mt_ndvi|gsi|rf|full)"
     r"(?:_seed(?P<seed>\d+))?"
     r"_(?P<arch>deeplabv3plus_cbam|segformer)$"
 )
