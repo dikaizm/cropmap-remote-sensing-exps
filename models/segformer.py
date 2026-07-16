@@ -2,7 +2,7 @@
 SegFormer wrapper using segmentation-models-pytorch.
 
 Usage:
-    from cropmap_pipeline.models import build_segformer
+    from models import build_segformer
 
     model = build_segformer(
         encoder_name="mit_b2",

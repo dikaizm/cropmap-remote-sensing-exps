@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import rasterio
 
-from cropmap_pipeline.config import S2_NODATA, S2_MIN_VALID_FRAC
+from config import S2_NODATA, S2_MIN_VALID_FRAC
 
 log = logging.getLogger(__name__)
 

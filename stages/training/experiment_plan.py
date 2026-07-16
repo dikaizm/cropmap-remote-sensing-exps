@@ -8,10 +8,10 @@ indices → registry → flat plan), delegating to stages/training/experiments/.
 import logging
 from pathlib import Path
 
-from cropmap_pipeline.config import (
+from config import (
     ARCH_CFG, TRAIN_YEARS, PROCESSED_DIR, SELECT_GSI_DIRECT_JSON,
 )
-from cropmap_pipeline.stages.training.experiments import (
+from stages.training.experiments import (
     build_local_band_map,
     build_single_date_indices,
     build_naive_multitemporal_indices,
@@ -19,9 +19,9 @@ from cropmap_pipeline.stages.training.experiments import (
     build_registry,
     expand_exp_keys,
 )
-from cropmap_pipeline.stages.training.experiments.feature_selection import build_direct_indices
-from cropmap_pipeline.stages.training.helpers import _s2_for_year
-from cropmap_pipeline.stages.training import run_state
+from stages.training.experiments.feature_selection import build_direct_indices
+from stages.training.helpers import _s2_for_year
+from stages.training import run_state
 
 log = logging.getLogger(__name__)
 

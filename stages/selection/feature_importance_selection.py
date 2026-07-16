@@ -18,12 +18,12 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
-from cropmap_pipeline.config import (
+from config import (
     KEEP_CLASSES, CDL_CLASS_NAMES,
     SELECT_RF_DIRECT_JSON, SELECT_RF_DIRECT_BANDS,
     RF_N_ESTIMATORS, RF_MAX_PIXELS,
 )
-from cropmap_pipeline.stages.selection._utils import (
+from stages.selection._utils import (
     build_channel_names, sample_pixels, save_selection, log_selection_run, save_per_class_table,
 )
 

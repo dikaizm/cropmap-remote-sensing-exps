@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 
-from cropmap_pipeline.stages.training.train_segmentation import build_model
+from stages.training.train_segmentation import build_model
 
 
 def load_model(ckpt_path, device, arch_default, num_classes_default):

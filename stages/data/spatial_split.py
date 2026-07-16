@@ -403,9 +403,9 @@ def compute_split_from_cdl(cdl_paths, patch_size, stride, keep_classes, remap_lu
 
 
 def _main():
-    _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())          # cropmap_pipeline/
-    sys.path.insert(0, str(_ROOT.parent))
-    from cropmap_pipeline.config import (
+    _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
+    sys.path.insert(0, str(_ROOT))
+    from config import (
         PATCH_SIZE, STRIDE, MIN_VALID_FRAC, KEEP_CLASSES, REMAP_LUT, NUM_CLASSES,
         VAL_FRAC, TEST_FRAC, SEED, BLOCK_SIZE, MIN_CLASS_FRAC, CDL_BY_YEAR, CDL_TRAIN,
         TRAIN_YEARS, PROCESSED_DIR, CDL_CLASS_NAMES,

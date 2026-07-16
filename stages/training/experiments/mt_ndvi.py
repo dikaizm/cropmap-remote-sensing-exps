@@ -9,12 +9,12 @@ import numpy as np
 import rasterio
 
 _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
-sys.path.insert(0, str(_ROOT.parent))
+sys.path.insert(0, str(_ROOT))
 
-from cropmap_pipeline.config import (
+from config import (
     S2_BAND_NAMES, N_BANDS_PER_DATE, KEEP_CLASSES, PROCESSED_DIR,
 )
-from cropmap_pipeline.stages.training.experiments.single_date import _mean_ndvi
+from stages.training.experiments.single_date import _mean_ndvi
 
 import logging
 log = logging.getLogger(__name__)

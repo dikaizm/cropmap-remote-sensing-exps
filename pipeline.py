@@ -29,8 +29,8 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())          # cropmap_pipeline/
-sys.path.insert(0, str(_ROOT.parent))  # parent dir so "from cropmap_pipeline.x" works
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
+sys.path.insert(0, str(_ROOT))
 
 from dotenv import load_dotenv
 load_dotenv(_ROOT / ".env")
@@ -38,7 +38,7 @@ load_dotenv(_ROOT / ".env")
 os.environ.setdefault("MLFLOW_DISABLE_TELEMETRY", "true")
 import mlflow
 
-from cropmap_pipeline.config import (
+from config import (
     LOGS_DIR, MLFLOW_TRACKING_URI, MLFLOW_EXPERIMENT_PIPELINE,
 )
 
@@ -56,8 +56,8 @@ def run_fetch(force=False, data_dir=None, years=None, **_):
     log.info("=" * 60)
     import os
     from googleapiclient.http import MediaIoBaseDownload
-    from cropmap_pipeline.stages.data.fetch_data import _build_drive_service, list_folder
-    from cropmap_pipeline.config import (
+    from stages.data.fetch_data import _build_drive_service, list_folder
+    from config import (
         GDRIVE_PROCESSED_S2_FOLDER_IDS, GDRIVE_PROCESSED_CDL_FOLDER_ID,
         S2_PROCESSED_DIR, CDL_DIR,
     )
@@ -100,12 +100,12 @@ def run_feature(force=False, data_dir=None):
     log.info("=" * 60)
     log.info("FEATURE SELECTION — GSI + RF (normalized score >= 0.5)")
     log.info("=" * 60)
-    from cropmap_pipeline.stages.selection.band_scoring import (
+    from stages.selection.band_scoring import (
         configure_data_dir, get_stage1_inputs,
     )
-    from cropmap_pipeline.stages.selection.gsi_selection import run_gsi_direct
-    from cropmap_pipeline.stages.selection.feature_importance_selection import run_rf_direct
-    from cropmap_pipeline.config import PROCESSED_DIR
+    from stages.selection.gsi_selection import run_gsi_direct
+    from stages.selection.feature_importance_selection import run_rf_direct
+    from config import PROCESSED_DIR
 
     configure_data_dir(data_dir)
     years_data = get_stage1_inputs()
@@ -119,7 +119,7 @@ def run_train(force=False, data_dir=None):
     log.info("=" * 60)
     log.info("TRAINING — Band selection comparison")
     log.info("=" * 60)
-    from cropmap_pipeline.stages.training.train_segmentation import main as train_main
+    from stages.training.train_segmentation import main as train_main
     train_main(force=force, data_dir=data_dir)
 
 

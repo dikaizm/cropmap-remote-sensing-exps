@@ -16,41 +16,41 @@ import torch
 from torch.utils.data import DataLoader, ConcatDataset, WeightedRandomSampler
 import mlflow
 
-from cropmap_pipeline.config import (
+from config import (
     CDL_CLASS_NAMES, KEEP_CLASSES, REMAP_LUT, NUM_CLASSES,
     PATCH_SIZE, STRIDE, MIN_VALID_FRAC,
     TRAIN_YEARS, TEST_YEAR, VAL_FRAC, TEST_FRAC,
     BLOCK_SIZE, MIN_CLASS_FRAC,
     EARLY_STOP, EARLY_STOP_DELTA, ARCH_CFG,
 )
-from cropmap_pipeline.stages.training import run_state
-from cropmap_pipeline.stages.training.run_state import (
+from stages.training import run_state
+from stages.training.run_state import (
     DEVICE, _resolve_hp, _build_optimizer, _build_scheduler, _combo_done,
 )
-from cropmap_pipeline.stages.training.model_builder import build_model
-from cropmap_pipeline.stages.training.metrics import (
+from stages.training.model_builder import build_model
+from stages.training.metrics import (
     validate_one_epoch, evaluate_test_set, benchmark_inference_latency,
     _get_hardware_info, per_class_metric_dict,
 )
-from cropmap_pipeline.stages.training.datasets import (
+from stages.training.datasets import (
     NormalizedDataset, PreloadedDataset, AugmentedSubset, _patch_weights,
 )
-from cropmap_pipeline.stages.training.viz import (
+from stages.training.viz import (
     _plot_confusion_matrix, save_segmentation_map, _load_rgb_for_viz,
     save_test_patch_visualizations, save_training_curve,
 )
-from cropmap_pipeline.stages.training.gdrive_upload import upload_models_to_gdrive
-from cropmap_pipeline.stages.training.full_scene_inference import (
+from stages.training.gdrive_upload import upload_models_to_gdrive
+from stages.training.full_scene_inference import (
     run_full_inference, load_gt_remap,
 )
-from cropmap_pipeline.stages.training.helpers import (
+from stages.training.helpers import (
     _s2_for_year, _valid_global_indices, _filter_s2_by_band_indices,
 )
-from cropmap_pipeline.stages.training.normalization import load_or_compute_norm_stats
-from cropmap_pipeline.stages.training.losses import (
+from stages.training.normalization import load_or_compute_norm_stats
+from stages.training.losses import (
     build_wce, build_focal_tversky, build_dynamic_balanced,
 )
-from cropmap_pipeline.stages.data.spatial_split import (
+from stages.data.spatial_split import (
     _block_spatial_split, _save_block_split_artifacts,
 )
 from geoai.geoai.train import RasterPatchDataset

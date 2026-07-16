@@ -2,9 +2,9 @@
 
 import logging
 
-from cropmap_pipeline.config import ARCH_CFG
-from cropmap_pipeline.models import DeepLabV3PlusCBAM, build_segformer
-from cropmap_pipeline.stages.training.run_state import DEVICE
+from config import ARCH_CFG
+from models import DeepLabV3PlusCBAM, build_segformer
+from stages.training.run_state import DEVICE
 
 log = logging.getLogger(__name__)
 

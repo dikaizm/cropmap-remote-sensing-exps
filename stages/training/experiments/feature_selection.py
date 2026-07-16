@@ -10,8 +10,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from cropmap_pipeline.config import S2_BAND_NAMES
-from cropmap_pipeline.stages.training.experiments.base import parse_date
+from config import S2_BAND_NAMES
+from stages.training.experiments.base import parse_date
 
 log = logging.getLogger(__name__)
 

@@ -44,30 +44,30 @@ import pandas as pd
 import mlflow
 from mlflow.tracking import MlflowClient
 
-_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())   # cropmap_pipeline/
-sys.path.insert(0, str(_ROOT.parent))
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
+sys.path.insert(0, str(_ROOT))
 
-from cropmap_pipeline.config import (
+from config import (
     S2_MIN_VALID_FRAC, MLFLOW_TRACKING_URI,
     TRAIN_YEARS, TEST_YEAR, VAL_FRAC, TEST_FRAC,
     LOGS_DIR, ARCH_CFG, GDRIVE_PRELOAD_CACHE_FOLDER_ID,
 )
-from cropmap_pipeline.stages.training import run_state
-from cropmap_pipeline.stages.training.run_state import (
+from stages.training import run_state
+from stages.training.run_state import (
     _device_label, _load_hp_grid, _hp_tag, _flush_deferred_logs,
 )
-from cropmap_pipeline.stages.training.normalization import NORM_MODES
-from cropmap_pipeline.stages.training.helpers import (
+from stages.training.normalization import NORM_MODES
+from stages.training.helpers import (
     compute_class_weights, validate_s2_files, _filter_s2_by_band_indices,
 )
-from cropmap_pipeline.stages.training.metrics import evaluate_test_set, _get_hardware_info
-from cropmap_pipeline.stages.training.datasets import NormalizedDataset
-from cropmap_pipeline.stages.training.model_builder import build_model
-from cropmap_pipeline.stages.training.gdrive_upload import (
+from stages.training.metrics import evaluate_test_set, _get_hardware_info
+from stages.training.datasets import NormalizedDataset
+from stages.training.model_builder import build_model
+from stages.training.gdrive_upload import (
     _check_gdrive_token, upload_models_to_gdrive,
 )
-from cropmap_pipeline.stages.training.experiment_plan import build_experiment_plan
-from cropmap_pipeline.stages.training.runner import run_experiment
+from stages.training.experiment_plan import build_experiment_plan
+from stages.training.runner import run_experiment
 
 # Backward-compat re-exports: external code imports these names from this module.
 #   pipeline.py                 → main
@@ -146,7 +146,7 @@ def main(
         "args" in globals() and getattr(args, "use_cloud_preload", False)) else None
     if _pc_gdrive and not getattr(args, "no_preload", False):
         run_state.PRELOAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        from cropmap_pipeline.stages.data.fetch_data import fetch_preload_cache
+        from stages.data.fetch_data import fetch_preload_cache
         log.info(f"Fetching cloud preload cache from GDrive folder {_pc_gdrive} → {run_state.PRELOAD_CACHE_DIR}")
         got = fetch_preload_cache(_pc_gdrive, str(run_state.PRELOAD_CACHE_DIR), overwrite=False)
         log.info(f"Cloud preload cache: {len(got)} file(s) ready in {run_state.PRELOAD_CACHE_DIR}")
@@ -532,7 +532,7 @@ if __name__ == "__main__":
     if args.build_cache_only and not args.no_upload_cache:
         _up_folder = args.upload_cache_gdrive or GDRIVE_PRELOAD_CACHE_FOLDER_ID or None
         if _up_folder:
-            from cropmap_pipeline.stages.data.fetch_data import upload_preload_cache
+            from stages.data.fetch_data import upload_preload_cache
             log.info(f"Uploading built preload cache from {run_state.PRELOAD_CACHE_DIR} → GDrive {_up_folder}")
             up = upload_preload_cache(_up_folder, str(run_state.PRELOAD_CACHE_DIR), overwrite=False)
             log.info(f"Preload cache upload complete: {len(up)} file(s)")

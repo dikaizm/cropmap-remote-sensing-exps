@@ -33,18 +33,18 @@ import rasterio
 from rasterio.windows import Window, transform as win_transform
 
 _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
-sys.path.insert(0, str(_ROOT.parent))
+sys.path.insert(0, str(_ROOT))
 os.environ.setdefault("MLFLOW_DISABLE_TELEMETRY", "true")
 
-from cropmap_pipeline.config import (
+from config import (
     PATCH_SIZE, STRIDE, MIN_VALID_FRAC, KEEP_CLASSES, REMAP_LUT, NUM_CLASSES,
     VAL_FRAC, TEST_FRAC, SEED, BLOCK_SIZE, MIN_CLASS_FRAC, CDL_CLASS_NAMES,
     S2_BAND_NAMES, S2_NODATA,
 )
-from cropmap_pipeline.stages.data.spatial_split import (
+from stages.data.spatial_split import (
     compute_split_from_cdl, _save_block_split_artifacts,
 )
-from cropmap_pipeline.stages.data.valid_dates import filter_valid_s2_dates
+from stages.data.valid_dates import filter_valid_s2_dates
 
 log = logging.getLogger("materialize_split")
 

@@ -3,7 +3,7 @@
 import os
 import logging
 
-from cropmap_pipeline.config import GDRIVE_OAUTH_TOKEN, GDRIVE_MODELS_FOLDER_ID
+from config import GDRIVE_OAUTH_TOKEN, GDRIVE_MODELS_FOLDER_ID
 
 log = logging.getLogger(__name__)
 

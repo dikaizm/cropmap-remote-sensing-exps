@@ -26,10 +26,10 @@ import torch
 import mlflow
 from mlflow.tracking import MlflowClient
 
-from cropmap_pipeline.utils.mlflow_utils import patch_artifact_logging
+from utils.mlflow_utils import patch_artifact_logging
 patch_artifact_logging()
 
-from cropmap_pipeline.config import (
+from config import (
     ARCH_CFG,
     WARMUP_EPOCHS, SCHED_POWER, WARMUP_START_FACTOR,
     S2_TRAIN_DIR, S2_PROCESSED_DIR, CDL_BY_YEAR, CDL_TRAIN,

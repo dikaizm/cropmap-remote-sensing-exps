@@ -2,7 +2,7 @@
 DeepLabV3+ with CBAM attention injected after the ASPP module.
 
 Usage:
-    from cropmap_pipeline.models import DeepLabV3PlusCBAM
+    from models import DeepLabV3PlusCBAM
 
     model = DeepLabV3PlusCBAM(
         encoder_name="resnet50",

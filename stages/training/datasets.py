@@ -14,11 +14,11 @@ import numpy as np
 import torch
 import rasterio
 
-from cropmap_pipeline.config import N_BANDS_PER_DATE, PRELOAD_RAM_BUDGET_GB
-from cropmap_pipeline.stages.training.normalization import (
+from config import N_BANDS_PER_DATE, PRELOAD_RAM_BUDGET_GB
+from stages.training.normalization import (
     NORM_MODES, _per_channel_percentiles,
 )
-from cropmap_pipeline.stages.training import run_state
+from stages.training import run_state
 
 log = logging.getLogger(__name__)
 

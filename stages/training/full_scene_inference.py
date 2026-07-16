@@ -7,9 +7,9 @@ import torch
 import rasterio
 import rasterio.windows
 
-from cropmap_pipeline.config import S2_NODATA, REMAP_LUT
-from cropmap_pipeline.stages.training.normalization import _per_channel_percentiles
-from cropmap_pipeline.stages.training.run_state import DEVICE
+from config import S2_NODATA, REMAP_LUT
+from stages.training.normalization import _per_channel_percentiles
+from stages.training.run_state import DEVICE
 
 log = logging.getLogger(__name__)
 

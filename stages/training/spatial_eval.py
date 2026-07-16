@@ -11,18 +11,18 @@ import pandas as pd
 import mlflow
 from torch.utils.data import DataLoader
 
-from cropmap_pipeline.config import (
+from config import (
     PATCH_SIZE, STRIDE, KEEP_CLASSES, REMAP_LUT, MIN_VALID_FRAC,
     NUM_CLASSES, CDL_CLASS_NAMES,
 )
-from cropmap_pipeline.stages.training import run_state
-from cropmap_pipeline.stages.training.run_state import DEVICE
-from cropmap_pipeline.stages.training.helpers import _filter_s2_by_band_indices
-from cropmap_pipeline.stages.training.datasets import NormalizedDataset, PreloadedDataset
-from cropmap_pipeline.stages.training.metrics import evaluate_test_set
-from cropmap_pipeline.stages.training.viz import _plot_confusion_matrix, save_segmentation_map
-from cropmap_pipeline.stages.training.full_scene_inference import load_gt_remap, run_full_inference
-from cropmap_pipeline.stages.training.experiments import build_local_band_map
+from stages.training import run_state
+from stages.training.run_state import DEVICE
+from stages.training.helpers import _filter_s2_by_band_indices
+from stages.training.datasets import NormalizedDataset, PreloadedDataset
+from stages.training.metrics import evaluate_test_set
+from stages.training.viz import _plot_confusion_matrix, save_segmentation_map
+from stages.training.full_scene_inference import load_gt_remap, run_full_inference
+from stages.training.experiments import build_local_band_map
 from geoai.geoai.train import RasterPatchDataset
 
 log = logging.getLogger(__name__)

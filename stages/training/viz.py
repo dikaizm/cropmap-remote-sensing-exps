@@ -18,12 +18,12 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 import rasterio
 import mlflow
 
-from cropmap_pipeline.config import (
+from config import (
     NUM_CLASSES, KEEP_CLASSES, CDL_CLASS_NAMES,
     S2_BAND_NAMES, S2_NODATA, PATCH_SIZE,
 )
-from cropmap_pipeline.utils.constants import USDA_CDL_COLORS
-from cropmap_pipeline.stages.training import run_state
+from utils.constants import USDA_CDL_COLORS
+from stages.training import run_state
 
 log = logging.getLogger(__name__)
 

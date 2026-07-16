@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from cropmap_pipeline.config import (
+from config import (
     MLFLOW_EXPERIMENT_TRAIN_SPATIAL,
     MLFLOW_EXPERIMENT_TRAIN_SAME_AREA,
     MLFLOW_EXPERIMENT_TRAIN_V6_SPATIAL,

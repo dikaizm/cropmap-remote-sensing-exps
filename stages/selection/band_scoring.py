@@ -16,14 +16,14 @@ from datetime import datetime
 from glob import glob
 
 _ROOT = next(_p for _p in pathlib.Path(__file__).resolve().parents if (_p / "config.py").exists())
-sys.path.insert(0, str(_ROOT.parent))
+sys.path.insert(0, str(_ROOT))
 
 os.environ["MLFLOW_DISABLE_TELEMETRY"] = "true"
 
-from cropmap_pipeline.utils.mlflow_utils import patch_artifact_logging
+from utils.mlflow_utils import patch_artifact_logging
 patch_artifact_logging()
 
-from cropmap_pipeline.config import (
+from config import (
     CDL_BY_YEAR as _CDL_BY_YEAR,
     CDL_TRAIN as _CDL_TRAIN,
     CDL_CLASS_NAMES,
@@ -67,7 +67,7 @@ def configure_data_dir(data_dir: str | None) -> None:
 def _glob_s2_train() -> list[str]:
     """Glob S2 files from flat train/ dir, then drop low-validity dates
     (same filter as the training pipeline → standalone selection stays consistent)."""
-    from cropmap_pipeline.stages.data.valid_dates import filter_valid_s2_dates
+    from stages.data.valid_dates import filter_valid_s2_dates
     files = sorted(glob(str(S2_TRAIN_DIR / "*_processed.tif")) + glob(str(S2_TRAIN_DIR / "S2H_*.tif")))
     seen  = set()
     files = [p for p in files if not (p in seen or seen.add(p))]
@@ -116,8 +116,8 @@ def main(force: bool = False, data_dir: str = None, output_dir: str = None,
     configure_data_dir(data_dir)
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-    from cropmap_pipeline.stages.selection.gsi_selection import run_gsi_direct
-    from cropmap_pipeline.stages.selection.feature_importance_selection import run_rf_direct
+    from stages.selection.gsi_selection import run_gsi_direct
+    from stages.selection.feature_importance_selection import run_rf_direct
     if selector not in _DIRECT_OUTPUT_MAP:
         raise ValueError(f"--selector must be 'gsi_direct' or 'rf_direct', got {selector!r}")
 

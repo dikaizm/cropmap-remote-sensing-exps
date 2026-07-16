@@ -11,10 +11,10 @@ import torch
 import rasterio
 import rasterio.windows
 
-from cropmap_pipeline.config import (
+from config import (
     N_BANDS_PER_DATE, KEEP_CLASSES, NUM_CLASSES, CLASS_REMAP, S2_NODATA,
 )
-from cropmap_pipeline.stages.training import run_state
+from stages.training import run_state
 
 log = logging.getLogger(__name__)
 
