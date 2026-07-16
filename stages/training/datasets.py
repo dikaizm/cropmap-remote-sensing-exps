@@ -29,9 +29,17 @@ _READ_BUDGET_FRAC  = 0.5
 _CHUNK_BUDGET_FRAC = 0.5
 # Only claim this fraction of currently-available memory when auto-detecting —
 # leaves headroom for the OS page cache, mmap pages of the output buffer, and
-# whatever else the user is running.
-_AVAIL_SAFETY_FRAC = 0.7
+# whatever else the user is running. Kept conservative because some environments
+# (WSL2 VMs in particular) hard-kill on overcommit instead of swapping gracefully —
+# there is no cushion to lean on if the estimate runs a little hot.
+_AVAIL_SAFETY_FRAC = 0.5
 _MIN_BUDGET_BYTES  = 2e9   # floor: below this, thread/chunk sizing degenerates
+# Decoded-array byte estimates below are the theoretical minimum (raw float32
+# buffer); actual peak runs higher — rasterio block-decompression scratch space
+# for the read path, and one extra transient buffer during the astype(float16)
+# cast at the end of each normalisation chunk. Both paths are inflated by this
+# factor rather than assumed exact, since a hard OOM-kill has no recovery path.
+_SAFETY_MULT = 1.5
 
 
 def _resolve_ram_budget() -> float:
@@ -62,14 +70,20 @@ def _ram_safe_read_threads(budget_bytes: float, per_file_bytes: float,
 
     Each thread holds one decoded float32 file array in RAM at a time
     (see out_dtype=float32 in _read_one_file — no float64 intermediate).
+    per_file_bytes is inflated by _SAFETY_MULT to cover rasterio's internal
+    decode/decompression scratch space, which isn't visible from array size alone.
     """
-    by_ram = max(1, int(budget_bytes * _READ_BUDGET_FRAC // max(per_file_bytes, 1)))
+    by_ram = max(1, int(budget_bytes * _READ_BUDGET_FRAC // max(per_file_bytes * _SAFETY_MULT, 1)))
     return max(1, min(n_files, cpu_cap, by_ram))
 
 
 def _ram_safe_chunk(budget_bytes: float, n_ch: int, ps: int) -> int:
-    """Cap normalisation CHUNK (patches/iter) so each chunk's float32 copy fits budget."""
-    per_patch_bytes = n_ch * ps * ps * 4  # float32 working copy
+    """Cap normalisation CHUNK (patches/iter) so each chunk's float32 copy fits budget.
+
+    Inflated by _SAFETY_MULT: even with in-place arithmetic, the old float32
+    chunk and its new float16 cast briefly coexist at the end of each iteration.
+    """
+    per_patch_bytes = n_ch * ps * ps * 4 * _SAFETY_MULT  # float32 working copy + cast overlap
     return max(1, int(budget_bytes * _CHUNK_BUDGET_FRAC // max(per_patch_bytes, 1)))
 
 
@@ -372,11 +386,17 @@ class PreloadedDataset(torch.utils.data.Dataset):
                  f"(chunk={CHUNK} patches, RAM budget={_budget/1e9:.1f}GB)")
         for start in range(0, n, CHUNK):
             end   = min(start + CHUNK, n)
+            # In-place arithmetic: `-=`/`/=`/`out=` avoid the extra full-size
+            # float32 temporaries that `chunk = (chunk - lo_b) / d_b` would create
+            # (each non-in-place op allocates a new array before the old one is
+            # freed) — halves peak RSS during this loop vs. the naive form.
             chunk = buf[start:end].astype(np.float32)
-            chunk = (chunk - lo_b) / d_b
+            chunk -= lo_b
+            chunk /= d_b
             if norm_mode != "zscore":
-                chunk = np.clip(chunk, 0.0, 1.0)
+                np.clip(chunk, 0.0, 1.0, out=chunk)
             buf[start:end] = chunk.astype(np.float16)
+            del chunk
         buf.flush()
 
         masks = [
