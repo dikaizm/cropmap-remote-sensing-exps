@@ -200,7 +200,11 @@ def main(
             f"across architectures. train_years={TRAIN_YEARS}, test_year={TEST_YEAR}.",
         )
         n_ch = len(arch_runs[0][1]) if arch_runs[0][1] else 0
-        _sel_sfx = f"_s{score_threshold:g}"
+        # score_threshold only governs gsi/rf direct band selection — for
+        # single_date/mt_ndvi/full (no threshold-based selection involved) the
+        # suffix is meaningless noise (e.g. exp_full_s0.5 despite score_threshold
+        # playing no role), so only include it where it's actually load-bearing.
+        _sel_sfx = f"_s{score_threshold:g}" if exp_key in ("gsi", "rf") else ""
         if run_state.HP_TAG:
             _sel_sfx += f"_{run_state.HP_TAG}"
         if run_state.SEED_TAG:
