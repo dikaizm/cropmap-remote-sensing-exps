@@ -77,6 +77,32 @@ def _ram_safe_read_threads(budget_bytes: float, per_file_bytes: float,
     return max(1, min(n_files, cpu_cap, by_ram))
 
 
+def _flush_and_evict(buf, path) -> None:
+    """Force writeback of the memmap's dirty pages and tell the OS it can drop them
+    from the page cache.
+
+    A large output memmap (10s of GB) accumulates resident dirty/cached pages over
+    the life of the fill+normalise loop even though nothing in the *thread/chunk*
+    budgeting holds it in RAM directly — measured peak RSS ran well above the
+    computed thread+chunk budget on a run where this was the only unaccounted
+    factor. This is especially dangerous on WSL2, where dirty-page writeback over
+    some mount types lags and there is little to no swap cushion — a hot estimate
+    ends in a hard SIGKILL, not graceful degradation. No-op on platforms without
+    posix_fadvise (e.g. macOS) — best-effort only, never raises.
+    """
+    buf.flush()
+    if not hasattr(os, "posix_fadvise"):
+        return
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+        try:
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)  # length=0 means "to EOF"
+        finally:
+            os.close(fd)
+    except OSError:
+        pass
+
+
 def _ram_safe_chunk(budget_bytes: float, n_ch: int, ps: int) -> int:
     """Cap normalisation CHUNK (patches/iter) so each chunk's float32 copy fits budget.
 
@@ -373,6 +399,10 @@ class PreloadedDataset(torch.utils.data.Dataset):
                     for pi, (r, c) in enumerate(patches):
                         buf[pi, out_pos, :, :] = band_plane[r:r+ps, c:c+ps]
                 del arr
+                # Evict this file's writes from the page cache before the next one —
+                # otherwise the growing memmap's dirty/cached pages accumulate as
+                # resident memory over all 23+ files (see _flush_and_evict).
+                _flush_and_evict(buf, _buf_path)
 
         # Per-band normalisation using norm_mode stats.
         lo_per_ch, hi_per_ch = _per_channel_percentiles(band_indices, *band_percentiles)
@@ -397,6 +427,7 @@ class PreloadedDataset(torch.utils.data.Dataset):
                 np.clip(chunk, 0.0, 1.0, out=chunk)
             buf[start:end] = chunk.astype(np.float16)
             del chunk
+            _flush_and_evict(buf, _buf_path)   # same rationale as the fill loop above
         buf.flush()
 
         masks = [
