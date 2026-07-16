@@ -22,11 +22,12 @@ from stages.training import run_state
 
 log = logging.getLogger(__name__)
 
-# Fraction of the resolved RAM budget reserved for concurrent file-read buffers vs.
-# the normalisation-chunk pass (each runs at a different point in __init__, never
-# overlapping, but both must fit individually under the same ceiling).
+# Fraction of the resolved RAM budget reserved for concurrent per-shard file-read
+# buffers vs. a shard's own normalisation working copy (each runs at a different
+# point per shard, never overlapping, but both must fit individually under the
+# same ceiling).
 _READ_BUDGET_FRAC  = 0.5
-_CHUNK_BUDGET_FRAC = 0.5
+_CHUNK_BUDGET_FRAC = 0.5   # also governs shard size — see _ram_safe_shard_size
 # Only claim this fraction of currently-available memory when auto-detecting —
 # leaves headroom for the OS page cache, mmap pages of the output buffer, and
 # whatever else the user is running. Kept conservative because some environments
@@ -103,11 +104,11 @@ def _flush_and_evict(buf, path) -> None:
         pass
 
 
-def _ram_safe_chunk(budget_bytes: float, n_ch: int, ps: int) -> int:
-    """Cap normalisation CHUNK (patches/iter) so each chunk's float32 copy fits budget.
+def _ram_safe_shard_size(budget_bytes: float, n_ch: int, ps: int) -> int:
+    """Cap shard size (patches/shard) so a shard's float32 working copy fits budget.
 
-    Inflated by _SAFETY_MULT: even with in-place arithmetic, the old float32
-    chunk and its new float16 cast briefly coexist at the end of each iteration.
+    Inflated by _SAFETY_MULT: even with in-place arithmetic, the shard's float32
+    working copy and its float16 cast briefly coexist at the end of normalisation.
     """
     per_patch_bytes = n_ch * ps * ps * 4 * _SAFETY_MULT  # float32 working copy + cast overlap
     return max(1, int(budget_bytes * _CHUNK_BUDGET_FRAC // max(per_patch_bytes, 1)))
@@ -288,16 +289,62 @@ class AugmentedSubset(torch.utils.data.Dataset):
 
 # ── In-memory dataset cache ───────────────────────────────────────────────────
 
+class _ShardedMemmap:
+    """Read-only view over N separately memory-mapped .npy shard files, indexed
+    as one contiguous array along axis 0.
+
+    Each shard is mmap'd lazily on first access to it, so opening a
+    _ShardedMemmap costs nothing up front. The point of splitting into shards
+    (vs. one big memmap) is bounding *build-time* peak RAM/disk-cache pressure —
+    see the shard-per-row-band fill loop in PreloadedDataset.__init__. At read
+    time this behaves like a single memmap: the OS still only pages in what's
+    actually touched.
+    """
+
+    def __init__(self, shard_paths, shard_sizes):
+        self._paths   = list(shard_paths)
+        self._offsets = np.cumsum([0] + list(shard_sizes)).tolist()
+        self._mmaps   = [None] * len(self._paths)
+
+    def __len__(self):
+        return self._offsets[-1]
+
+    def __getitem__(self, idx):
+        shard_idx = int(np.searchsorted(self._offsets, idx, side="right") - 1)
+        local_idx = idx - self._offsets[shard_idx]
+        if self._mmaps[shard_idx] is None:
+            self._mmaps[shard_idx] = np.load(str(self._paths[shard_idx]), mmap_mode="r")
+        return self._mmaps[shard_idx][local_idx]
+
+    def total_bytes(self):
+        return sum(p.stat().st_size for p in self._paths)
+
+
 class PreloadedDataset(torch.utils.data.Dataset):
-    """Builds a persistent disk cache of all patches; loads imgs via memory-map.
+    """Builds a persistent disk cache of all patches, split into RAM-budget-sized
+    shards; loads imgs via per-shard memory-map.
 
-    Reads each TIF file once in full (parallel threads) instead of per-patch
-    window reads → ~30–60s instead of 15+ min for large datasets.
-    Cache key covers s2_paths/cdl_path/bands/patch_size.
+    Patches are generated in row-major order (see RasterPatchDataset), so a
+    contiguous *index* range is also a contiguous *spatial* row-band — each
+    shard is built from a single windowed read per source file (covering just
+    that row-band) rather than reading the whole raster, so splitting into
+    shards does not multiply total I/O.
 
-    Imgs stored as float16 .npy → loaded with mmap_mode='r' so the OS pages in
-    only what each minibatch needs.  Peak RAM = model + batch, not full dataset.
-    Masks stored as int64 .pt (typically <1 GB, always in RAM).
+    Building one shard at a time (read → normalise → flush → close → next)
+    bounds peak memory to O(one shard) regardless of total dataset size —
+    a single big memmap's dirty/cached pages otherwise accumulate as resident
+    memory over the whole build (see _flush_and_evict), which is what caused
+    hard OOM-kills on memory-constrained machines (WSL2 in particular — little
+    to no swap cushion, a hot estimate ends in SIGKILL, not degradation).
+
+    Cache key covers s2_paths/cdl_path/bands/patch_size. A manifest file is
+    written last (after every shard + the masks file succeed) so its mere
+    presence is proof the cache is complete — safe to resume/rebuild after an
+    interrupted build without special-casing partial state.
+
+    Imgs stored as float16 .npy shards → loaded with mmap_mode='r' so the OS
+    pages in only what each minibatch needs. Peak RAM = model + batch, not
+    full dataset. Masks stored as int64 .pt (typically <1 GB, always in RAM).
     """
 
     def __init__(self, dataset, desc="preload", cache_dir=None, n_threads=None,
@@ -315,16 +362,24 @@ class PreloadedDataset(torch.utils.data.Dataset):
         assert band_percentiles is not None, "band_percentiles (lo, hi) required"
         assert norm_mode in NORM_MODES, f"norm_mode must be one of {NORM_MODES}"
         self._norm_mode = norm_mode
-        imgs_path, masks_path = self._cache_paths(dataset, cache_dir, norm_mode) if cache_dir else (None, None)
+        base_path, masks_path = self._cache_paths(dataset, cache_dir, norm_mode) if cache_dir else (None, None)
+        manifest_path = base_path.with_name(base_path.name + "_manifest.json") if base_path else None
 
-        if imgs_path and imgs_path.exists() and masks_path and masks_path.exists():
-            log.info(f"  [{desc}] Cache hit → mmap {imgs_path.name}")
-            t0 = time.time()
-            self._imgs  = np.load(str(imgs_path), mmap_mode="r")
-            self._masks = torch.load(masks_path, map_location="cpu", weights_only=True)
-            gb_disk = imgs_path.stat().st_size / 1e9
-            log.info(f"  [{desc}] mmap ready in {time.time()-t0:.1f}s ({gb_disk:.2f} GB on disk)")
-            return
+        if manifest_path and manifest_path.exists() and masks_path and masks_path.exists():
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            shard_paths = [base_path.with_name(f"{base_path.name}_shard{i:04d}.npy")
+                           for i in range(manifest["n_shards"])]
+            if all(p.exists() for p in shard_paths):
+                log.info(f"  [{desc}] Cache hit → mmap {len(shard_paths)} shard(s)")
+                t0 = time.time()
+                self._imgs  = _ShardedMemmap(shard_paths, manifest["shard_sizes"])
+                self._masks = torch.load(masks_path, map_location="cpu", weights_only=True)
+                gb_disk = self._imgs.total_bytes() / 1e9
+                log.info(f"  [{desc}] {len(shard_paths)} shard(s) ready in {time.time()-t0:.1f}s "
+                         f"({gb_disk:.2f} GB on disk)")
+                return
+            log.warning(f"  [{desc}] Manifest found but shard file(s) missing — rebuilding")
 
         log.info(f"  [{desc}] Cache miss → preloading from {len(dataset._s2_srcs)} TIF files …")
         t0 = time.time()
@@ -345,90 +400,108 @@ class PreloadedDataset(torch.utils.data.Dataset):
                     file_extraction.setdefault(fi, []).append((out_pos, gi - ch_offsets[fi] + 1))
                     break
 
-        patches = dataset.patches
+        patches = dataset.patches   # row-major (see class docstring) — shards stay spatially contiguous
         nodata  = dataset.nodata
 
-        # Allocate buf as a disk-backed float16 memmap — never occupies RAM regardless
-        # of channel count. 70ch × 1800 patches × 256² × float32 ≈ 33 GB; float16
-        # memmap keeps peak RAM to ~O(one TIF file) during the fill loop.
-        _buf_path = (imgs_path.with_suffix(".tmp.npy") if imgs_path
-                     else Path(run_state.PRELOAD_CACHE_DIR) / f"_tmp_{os.getpid()}.npy")
-        _buf_path.parent.mkdir(parents=True, exist_ok=True)
-        buf = np.lib.format.open_memmap(
-            str(_buf_path), mode="w+", dtype=np.float16, shape=(n, n_ch, ps, ps)
-        )
-        gb_alloc = buf.nbytes / 1e9
-        log.info(f"  [{desc}] Buf: {n}×{n_ch}×{ps}×{ps} float16 = {gb_alloc:.1f} GB on disk")
-
-        def _read_one_file(fi):
-            extractions = file_extraction[fi]
-            local_idxs  = [e[1] for e in extractions]
-            out_cols    = [e[0] for e in extractions]
-            try:
-                with rasterio.open(dataset.s2_paths[fi]) as src:
-                    # out_dtype=float32 decodes directly to float32 — avoids a transient
-                    # float64 full-resolution copy (source rasters are float64) that would
-                    # otherwise ~3x peak RAM per in-flight read thread.
-                    arr = src.read(indexes=local_idxs, out_dtype=np.float32)
-                arr[arr == nodata]      = 0.0
-                arr[~np.isfinite(arr)]  = 0.0
-                return fi, arr, out_cols
-            except Exception as e:
-                log.warning(f"  [{desc}] read failed file {fi}: {e}")
-                return fi, None, out_cols
-
-        # Single-threaded write to memmap — concurrent writes to overlapping patches
-        # cause data races; read threads are fine, write serialised via main thread.
-        _budget = _resolve_ram_budget()
-        if n_threads:
-            _n_threads = n_threads
-        else:
-            with rasterio.open(dataset.s2_paths[0]) as _src0:
-                _per_file_bytes = _src0.width * _src0.height * _src0.count * 4  # float32
-            _n_threads = _ram_safe_read_threads(
-                _budget, _per_file_bytes, len(file_extraction), os.cpu_count() or 8,
-            )
-        log.info(f"  [{desc}] Using {_n_threads} read threads for {len(file_extraction)} files "
-                 f"(RAM budget={_budget/1e9:.1f}GB)")
-        with ThreadPoolExecutor(max_workers=_n_threads) as pool:
-            for fi, arr, out_cols in pool.map(_read_one_file, list(file_extraction.keys())):
-                if arr is None:
-                    continue
-                for ci, out_pos in enumerate(out_cols):
-                    band_plane = arr[ci]
-                    for pi, (r, c) in enumerate(patches):
-                        buf[pi, out_pos, :, :] = band_plane[r:r+ps, c:c+ps]
-                del arr
-                # Evict this file's writes from the page cache before the next one —
-                # otherwise the growing memmap's dirty/cached pages accumulate as
-                # resident memory over all 23+ files (see _flush_and_evict).
-                _flush_and_evict(buf, _buf_path)
-
-        # Per-band normalisation using norm_mode stats.
         lo_per_ch, hi_per_ch = _per_channel_percentiles(band_indices, *band_percentiles)
         denom = np.maximum(hi_per_ch - lo_per_ch, 1.0).astype(np.float32)
         lo_b  = lo_per_ch[np.newaxis, :, np.newaxis, np.newaxis].astype(np.float32)
         d_b   = denom[np.newaxis, :, np.newaxis, np.newaxis]
-        # Re-resolve: read buffers are freed by now, so available memory has shifted.
+
         _budget = _resolve_ram_budget()
-        CHUNK = _ram_safe_chunk(_budget, n_ch, ps)
-        log.info(f"  [{desc}] Normalising with norm_mode={norm_mode} … "
-                 f"(chunk={CHUNK} patches, RAM budget={_budget/1e9:.1f}GB)")
-        for start in range(0, n, CHUNK):
-            end   = min(start + CHUNK, n)
-            # In-place arithmetic: `-=`/`/=`/`out=` avoid the extra full-size
-            # float32 temporaries that `chunk = (chunk - lo_b) / d_b` would create
-            # (each non-in-place op allocates a new array before the old one is
-            # freed) — halves peak RSS during this loop vs. the naive form.
-            chunk = buf[start:end].astype(np.float32)
+        shard_size = _ram_safe_shard_size(_budget, n_ch, ps)
+        shard_ranges = [(s, min(s + shard_size, n)) for s in range(0, n, shard_size)]
+        n_shards = len(shard_ranges)
+        gb_total = n * n_ch * ps * ps * 2 / 1e9   # float16
+        log.info(f"  [{desc}] {n}×{n_ch}×{ps}×{ps} float16 = {gb_total:.1f} GB total, "
+                 f"{n_shards} shard(s) of <= {shard_size} patches "
+                 f"(RAM budget={_budget/1e9:.1f}GB)")
+
+        def _tmp_shard_path(i):
+            return (base_path.with_name(f"{base_path.name}_shard{i:04d}.tmp.npy") if base_path
+                    else Path(run_state.PRELOAD_CACHE_DIR) / f"_tmp_{os.getpid()}_shard{i:04d}.npy")
+
+        final_shard_paths: list = []
+        shard_sizes: list = []
+        for shard_idx, (s0, s1) in enumerate(shard_ranges):
+            shard_patches = patches[s0:s1]
+            shard_n = s1 - s0
+            r_min = min(r for r, c in shard_patches)
+            r_max = max(r for r, c in shard_patches) + ps
+            win_h = r_max - r_min
+
+            shard_tmp_path = _tmp_shard_path(shard_idx)
+            shard_tmp_path.parent.mkdir(parents=True, exist_ok=True)
+            shard_buf = np.lib.format.open_memmap(
+                str(shard_tmp_path), mode="w+", dtype=np.float16, shape=(shard_n, n_ch, ps, ps)
+            )
+
+            def _read_one_file_window(fi, _r_min=r_min, _win_h=win_h):
+                extractions = file_extraction[fi]
+                local_idxs  = [e[1] for e in extractions]
+                out_cols    = [e[0] for e in extractions]
+                try:
+                    with rasterio.open(dataset.s2_paths[fi]) as src:
+                        # Windowed to this shard's row-band only — out_dtype=float32
+                        # decodes directly, avoiding a transient float64 copy
+                        # (source rasters are float64).
+                        win = rasterio.windows.Window(0, _r_min, src.width, _win_h)
+                        arr = src.read(indexes=local_idxs, window=win, out_dtype=np.float32)
+                    arr[arr == nodata]     = 0.0
+                    arr[~np.isfinite(arr)] = 0.0
+                    return fi, arr, out_cols
+                except Exception as e:
+                    log.warning(f"  [{desc}] shard {shard_idx}: read failed file {fi}: {e}")
+                    return fi, None, out_cols
+
+            if n_threads:
+                _n_threads = n_threads
+            else:
+                with rasterio.open(dataset.s2_paths[0]) as _src0:
+                    _per_file_bytes = win_h * _src0.width * _src0.count * 4   # float32, windowed
+                _n_threads = _ram_safe_read_threads(
+                    _budget, _per_file_bytes, len(file_extraction), os.cpu_count() or 8,
+                )
+            if shard_idx == 0:
+                log.info(f"  [{desc}] Using {_n_threads} read threads per shard "
+                         f"(RAM budget={_budget/1e9:.1f}GB)")
+
+            with ThreadPoolExecutor(max_workers=_n_threads) as pool:
+                for fi, arr, out_cols in pool.map(_read_one_file_window, list(file_extraction.keys())):
+                    if arr is None:
+                        continue
+                    for ci, out_pos in enumerate(out_cols):
+                        band_plane = arr[ci]   # (win_h, width)
+                        for pi, (r, c) in enumerate(shard_patches):
+                            lr = r - r_min
+                            shard_buf[pi, out_pos, :, :] = band_plane[lr:lr+ps, c:c+ps]
+                    del arr
+
+            # Normalise this shard in-place — already sized to fit the RAM budget,
+            # so (unlike the old single-buffer design) no further internal chunking
+            # is needed here. In-place ops (`-=`, `/=`, `out=`) avoid the extra
+            # full-size float32 temporaries that non-in-place ops would allocate.
+            chunk = shard_buf[:].astype(np.float32)
             chunk -= lo_b
             chunk /= d_b
             if norm_mode != "zscore":
                 np.clip(chunk, 0.0, 1.0, out=chunk)
-            buf[start:end] = chunk.astype(np.float16)
+            shard_buf[:] = chunk.astype(np.float16)
             del chunk
-            _flush_and_evict(buf, _buf_path)   # same rationale as the fill loop above
-        buf.flush()
+
+            shard_buf.flush()
+            _flush_and_evict(shard_buf, shard_tmp_path)
+            del shard_buf   # close write-mode memmap before rename (WSL/NTFS: open handle blocks rename)
+
+            if base_path:
+                final_path = base_path.with_name(f"{base_path.name}_shard{shard_idx:04d}.npy")
+                shard_tmp_path.rename(final_path)
+            else:
+                final_path = shard_tmp_path
+            final_shard_paths.append(final_path)
+            shard_sizes.append(shard_n)
+            log.info(f"  [{desc}] shard {shard_idx+1}/{n_shards} done "
+                     f"({shard_n} patches, rows [{r_min}:{r_max}])")
 
         masks = [
             torch.from_numpy(
@@ -439,18 +512,25 @@ class PreloadedDataset(torch.utils.data.Dataset):
         self._masks = torch.stack(masks)
 
         elapsed = time.time() - t0
-        log.info(f"  [{desc}] Preloaded in {elapsed:.1f}s — {gb_alloc:.1f} GB float16 on disk")
+        log.info(f"  [{desc}] Preloaded in {elapsed:.1f}s — {gb_total:.1f} GB float16 "
+                 f"across {n_shards} shard(s)")
 
-        if imgs_path:
-            del buf  # close write-mode memmap before rename (WSL/NTFS: open handle blocks rename+reopen)
-            _buf_path.rename(imgs_path)
+        if base_path:
             torch.save(self._masks, masks_path)
-            log.info(f"  [{desc}] Cached → {imgs_path.name} + {masks_path.name}")
-            self._imgs = np.load(str(imgs_path), mmap_mode="r")
+            manifest_tmp = manifest_path.with_suffix(".tmp.json")
+            with open(manifest_tmp, "w") as f:
+                json.dump({"n_shards": n_shards, "shard_sizes": shard_sizes,
+                           "n_ch": n_ch, "ps": ps}, f)
+            os.replace(manifest_tmp, manifest_path)   # atomic — presence = "build complete"
+            log.info(f"  [{desc}] Cached → {n_shards} shard(s) + {masks_path.name} + {manifest_path.name}")
+            self._imgs = _ShardedMemmap(final_shard_paths, shard_sizes)
         else:
-            self._imgs = np.array(buf)   # no cache dir: load into RAM
-            del buf
-            _buf_path.unlink(missing_ok=True)
+            # No cache dir: materialise fully in RAM (matches pre-sharding behaviour
+            # for this — in practice unused — code path; every real caller passes
+            # cache_dir=run_state.PRELOAD_CACHE_DIR).
+            self._imgs = np.concatenate([np.load(str(p)) for p in final_shard_paths])
+            for p in final_shard_paths:
+                p.unlink(missing_ok=True)
 
     @staticmethod
     def _cache_paths(dataset, cache_dir, norm_mode):
@@ -466,7 +546,7 @@ class PreloadedDataset(torch.utils.data.Dataset):
         }
         h = hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()[:16]
         base = Path(cache_dir) / f"preload_{h}"
-        return base.with_suffix(".npy"), base.with_name(base.name + "_masks.pt")
+        return base, base.with_name(base.name + "_masks.pt")
 
     def __len__(self):
         return len(self._masks)

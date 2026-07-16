@@ -308,11 +308,15 @@ def fetch_preload_cache(folder_id: str, output_dir: str,
                         overwrite: bool = False) -> list:
     """Download a cloud-built portable preload cache flat into output_dir.
 
-    Grabs every `preload_*.npy` + `preload_*_masks.pt` reachable from folder_id
-    (also descends into an optional `preload_cache/` subfolder). Filenames are
-    content-hash keyed by PreloadedDataset, so a matching file lands as a cache
-    hit at train time — no local rebuild. Pairs with `--build-cache-only`, which
-    builds the same files locally for upload.
+    Grabs every `preload_*.npy` + `preload_*_masks.pt` + `preload_*_manifest.json`
+    reachable from folder_id (also descends into an optional `preload_cache/`
+    subfolder). The manifest's mere presence is PreloadedDataset's cache-hit
+    signal (written last, after every shard succeeds) — without it a download
+    with only shards+masks reads as a cache MISS and gets rebuilt from scratch,
+    so it must be synced too. Filenames are content-hash keyed by
+    PreloadedDataset, so a matching set lands as a cache hit at train time — no
+    local rebuild. Pairs with `--build-cache-only`, which builds the same files
+    locally for upload.
     """
     from googleapiclient.http import MediaIoBaseDownload
 
@@ -320,9 +324,9 @@ def fetch_preload_cache(folder_id: str, output_dir: str,
     sub     = _find_subfolder(service, folder_id, "preload_cache")
     files, _ = _list_children(service, sub if sub else folder_id)
     cache = {n: fid for n, fid in files.items()
-             if n.startswith("preload_") and (n.endswith(".npy") or n.endswith(".pt"))}
+             if n.startswith("preload_") and (n.endswith(".npy") or n.endswith(".pt") or n.endswith(".json"))}
     if not cache:
-        log.warning("  No preload cache files (preload_*.npy / *_masks.pt) in folder %s", folder_id)
+        log.warning("  No preload cache files (preload_*.npy / *_masks.pt / *_manifest.json) in folder %s", folder_id)
         return []
 
     out_dir = Path(output_dir)
@@ -330,7 +334,12 @@ def fetch_preload_cache(folder_id: str, output_dir: str,
     results, new_count, skipped, errors = [], 0, 0, 0
     log.info("  Downloading %d preload cache file(s) → %s", len(cache), out_dir)
 
-    for fname, fid in sorted(cache.items()):
+    # Manifest files last: their presence is PreloadedDataset's cache-hit signal
+    # (mirrors the write-order invariant at build time — see PreloadedDataset).
+    # Downloading it before its shards would let a reader see a "complete" cache
+    # that isn't, if this download is interrupted partway through.
+    ordered = sorted(cache.items(), key=lambda kv: (kv[0].endswith(".json"), kv[0]))
+    for fname, fid in ordered:
         out_path = out_dir / fname
         if not overwrite and out_path.exists() and out_path.stat().st_size > 0:
             log.info("  Skip (exists): %s", fname)
@@ -364,18 +373,22 @@ def upload_preload_cache(folder_id: str, cache_dir: str,
                          overwrite: bool = False) -> list:
     """Upload locally-built portable preload cache files to a GDrive folder.
 
-    Pushes every `preload_*.npy` + `preload_*_masks.pt` under cache_dir. Skips
-    files already present in the folder unless overwrite=True (then replaces
-    in place via files().update). Pairs with `--build-cache-only` so a cache
-    built on one machine is reusable by `--preload-cache-gdrive` on another.
+    Pushes every `preload_*.npy` + `preload_*_masks.pt` + `preload_*_manifest.json`
+    under cache_dir (manifest last — see fetch_preload_cache for why order
+    matters). Skips files already present in the folder unless overwrite=True
+    (then replaces in place via files().update). Pairs with `--build-cache-only`
+    so a cache built on one machine is reusable by `--preload-cache-gdrive` on
+    another.
     """
     from googleapiclient.http import MediaFileUpload
 
     cache_dir = Path(cache_dir)
-    local = sorted(
+    local = (
         [p for p in cache_dir.glob("preload_*.npy") if p.stat().st_size > 0] +
         [p for p in cache_dir.glob("preload_*_masks.pt") if p.stat().st_size > 0]
     )
+    local.sort()
+    local += sorted(p for p in cache_dir.glob("preload_*_manifest.json") if p.stat().st_size > 0)
     if not local:
         log.warning("  No preload cache files to upload in %s", cache_dir)
         return []
