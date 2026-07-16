@@ -3,11 +3,44 @@ Pipeline configuration — edit GDrive folder IDs and paths before running.
 All path settings can be overridden via --data-dir in pipeline.py.
 """
 
+import os
+import sys
+import importlib.util
 import numpy as np
 from pathlib import Path
 
 # ── Project root ───────────────────────────────────────────────────────────────
 PROJECT_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())   # cropmap_pipeline/
+
+# ── geoai submodule auto-discovery ──────────────────────────────────────────────
+# Stage 3 imports `geoai.geoai.*` (opengeos/geoai, double-nested: the checkout dir
+# has no top-level __init__.py, so its PARENT must be on sys.path for the nested
+# `geoai/geoai/` package to resolve). Historically this required the user to
+# manually `export PYTHONPATH=/path/to/geoai:$PYTHONPATH` every session. Instead,
+# auto-discover it here (once, as a side effect of importing config — which every
+# entry point does first) so no manual step or symlink is needed:
+#   1. GEOAI_PATH env var, if set — explicit override for non-standard layouts.
+#   2. The conventional layout used by this project: geoai/ as a sibling of this
+#      repo's checkout (PROJECT_ROOT.parent/geoai), matching the superproject's
+#      git submodule structure.
+# Silently no-ops if geoai is already importable or not found anywhere — the
+# handful of modules that actually need it will raise the normal, clear
+# ModuleNotFoundError on their own `from geoai.geoai... import` line.
+if importlib.util.find_spec("geoai") is None:
+    _geoai_candidates = []
+    if os.environ.get("GEOAI_PATH"):
+        _geoai_candidates.append(Path(os.environ["GEOAI_PATH"]))
+    _geoai_candidates.append(PROJECT_ROOT.parent / "geoai")   # conventional sibling layout
+    for _c in _geoai_candidates:
+        # _c is the submodule checkout root (no __init__.py of its own — imported
+        # as `geoai.geoai`, a double-nested package, so its PARENT goes on sys.path).
+        # Appended, not inserted at 0: the superproject parent dir may contain its
+        # own same-named packages (e.g. a top-level utils/) that must NOT shadow
+        # this repo's — this repo's own sys.path entry (inserted by the entry-point
+        # script) should always win name collisions.
+        if (_c / "geoai" / "__init__.py").exists():
+            sys.path.append(str(_c.parent))
+            break
 
 # ── Data paths ─────────────────────────────────────────────────────────────────
 PROCESSED_DIR    = PROJECT_ROOT / "data" / "processed"
