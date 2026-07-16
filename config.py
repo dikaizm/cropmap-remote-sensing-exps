@@ -185,7 +185,7 @@ EARLY_STOP     = 20
 EARLY_STOP_DELTA = 0.001   # min mIoU improvement to reset patience
 VAL_FRAC       = 0.15      # fraction → val
 TEST_FRAC      = 0.15      # fraction → test  (70/15/15)
-SEED           = 42
+SEED           = 456
 
 # ── Train/val/test split strategy ──────────────────────────────────────────
 # Spatial block (grid) split — patches grouped into BLOCK_SIZE×BLOCK_SIZE blocks;
