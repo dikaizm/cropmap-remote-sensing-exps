@@ -27,6 +27,7 @@ Usage:
     python stages/training/train_segmentation.py --exp gsi --arch segformer
     python stages/training/train_segmentation.py --force               # re-run even if ckpt exists
     python stages/training/train_segmentation.py --data-dir /mnt/data
+    python stages/training/train_segmentation.py --exp gsi --random-channel-order  # channel-order sanity check
 """
 
 import os
@@ -102,6 +103,8 @@ def main(
     no_aug=False,
     hp=None,
     seed=None,
+    random_channel_order=False,
+    channel_shuffle_seed=None,
 ):
     # Runtime overrides live on run_state so every training module sees them.
     if batch_size:
@@ -172,6 +175,28 @@ def main(
         s2_processed, exps, archs, phenol_dates, score_threshold, data_dir,
     )
 
+    # ── Sanity-check ablation: shuffle channel order per run ────────────────
+    # Verifies the model learns from channel *content*, not its position in the
+    # input stack — union-selected channel sets have no inherent phenological
+    # order, so shuffling should not materially change accuracy.
+    # channel_shuffle_seed is intentionally decoupled from run_state.SEED (the
+    # training/split seed) so repeated trials vary ONLY the channel order —
+    # split and model init stay fixed, isolating the one variable under test.
+    effective_shuffle_seed = channel_shuffle_seed if channel_shuffle_seed is not None else run_state.SEED
+    if random_channel_order:
+        import random as _random
+        _rng = _random.Random(effective_shuffle_seed)
+        _shuffled_plan = []
+        for exp_key, arch, band_idx, band_names, description, extra_kw in plan:
+            if band_idx:
+                paired = list(zip(band_idx, band_names))
+                _rng.shuffle(paired)
+                band_idx = [p[0] for p in paired]
+                band_names = [p[1] for p in paired]
+            _shuffled_plan.append((exp_key, arch, band_idx, band_names, description, extra_kw))
+        plan = _shuffled_plan
+        log.info(f"Channel order randomized (shuffle_seed={effective_shuffle_seed}) for {len(plan)} run(s)")
+
     # ── Class weights ──────────────────────────────────────────────────────
     cw_tensor, cw_counts = compute_class_weights(return_counts=True)
     log.info("Class weights computed")
@@ -209,6 +234,8 @@ def main(
             _sel_sfx += f"_{run_state.HP_TAG}"
         if run_state.SEED_TAG:
             _sel_sfx += f"_{run_state.SEED_TAG}"
+        if random_channel_order:
+            _sel_sfx += f"_randord{effective_shuffle_seed}"
         parent_run_name = f"exp_{exp_key}{_sel_sfx}_{timestamp}"
         if run_state.EVAL_ONLY_CKPT is not None:
             parent_run_name = f"eval_{parent_run_name}"
@@ -222,6 +249,8 @@ def main(
                 "loss":         loss,
                 "seed":         run_state.SEED,
                 "score_threshold": score_threshold,
+                "random_channel_order": random_channel_order,
+                "channel_shuffle_seed": effective_shuffle_seed if random_channel_order else None,
                 **({f"hp_{k}": v for k, v in run_state.HP_OVERRIDE.items()} if run_state.HP_OVERRIDE else {}),
                 **_get_hardware_info(),
             })
@@ -388,6 +417,21 @@ if __name__ == "__main__":
     parser.add_argument("--no-aug", action="store_true",
                         help="Disable train-time augmentation (geometric + spectral). "
                              "Useful for ablation or fast debug runs.")
+    parser.add_argument("--random-channel-order", action="store_true",
+                        help="Shuffle each experiment's channel order before training. "
+                             "Sanity-check ablation: confirms the model learns from channel "
+                             "content, not its position in the input stack. Run names get a "
+                             "'_randord{shuffle_seed}' suffix in MLflow. Combine with "
+                             "--random-channel-order-trials for repeated independent shuffles.")
+    parser.add_argument(
+        "--random-channel-order-trials", type=int, default=1, metavar="N",
+        help="With --random-channel-order: repeat the --exp/--arch matrix N times, each "
+             "with a different, reproducible channel permutation (shuffle seeds 1..N). "
+             "The channel-shuffle seed is decoupled from --seed/config.SEED, so the "
+             "spatial split and model init stay fixed across trials — only channel order "
+             "varies. E.g. --exp gsi rf --random-channel-order --random-channel-order-trials 4 "
+             "gives 4 runs each for gsi-deeplab, gsi-segformer, rf-deeplab, rf-segformer (16 total).",
+    )
     parser.add_argument("--data-dir", default=None, help="Override data/processed directory")
     parser.add_argument("--phenol-dates", default=None, help="Path to pre-computed phenol_dates.json for Exp B multi-temporal baseline")
     parser.add_argument("--shutdown", action="store_true", help="Stop the RunPod pod after training")
@@ -510,24 +554,38 @@ if __name__ == "__main__":
                 log.info(f"{'#'*65}")
                 log.info(f"  HP combo: arch={hp_arch or 'ALL'}  {hp}")
                 log.info(f"{'#'*65}")
-            main(
-                exps=args.exp,
-                archs=run_archs,
-                loss=args.loss,
-                force=args.force,
-                data_dir=args.data_dir,
-                phenol_dates=args.phenol_dates,
-                skip_viz=args.skip_viz,
-                score_threshold=args.score_threshold,
-                batch_size=args.batch_size,
-                epochs=args.epochs,
-                no_preload=args.no_preload,
-                cache_only=args.build_cache_only,
-                norm_mode=args.norm,
-                no_aug=args.no_aug,
-                hp=hp,
-                seed=seed_val,
-            )
+
+            # Channel-shuffle trials — innermost loop. Each trial reuses the same
+            # seed/hp/split but draws a different, reproducible channel permutation
+            # (shuffle seeds 1..N), so only channel order varies across trials.
+            n_trials = args.random_channel_order_trials if args.random_channel_order else 1
+            shuffle_seeds = list(range(1, n_trials + 1)) if n_trials > 1 else [None]
+            if n_trials > 1:
+                log.info(f"Channel-order trials: {n_trials} (shuffle seeds {shuffle_seeds})")
+
+            for shuffle_seed in shuffle_seeds:
+                if shuffle_seed is not None:
+                    log.info(f"  -- channel-shuffle trial: seed={shuffle_seed} --")
+                main(
+                    exps=args.exp,
+                    archs=run_archs,
+                    loss=args.loss,
+                    force=args.force,
+                    data_dir=args.data_dir,
+                    phenol_dates=args.phenol_dates,
+                    skip_viz=args.skip_viz,
+                    score_threshold=args.score_threshold,
+                    batch_size=args.batch_size,
+                    epochs=args.epochs,
+                    no_preload=args.no_preload,
+                    cache_only=args.build_cache_only,
+                    norm_mode=args.norm,
+                    no_aug=args.no_aug,
+                    hp=hp,
+                    seed=seed_val,
+                    random_channel_order=args.random_channel_order,
+                    channel_shuffle_seed=shuffle_seed,
+                )
 
     # ── Upload all logs once, after the whole session finished ────────────────
     _flush_deferred_logs()
