@@ -153,7 +153,7 @@ GDRIVE_S2_TEST_A_FOLDER_ID = "1i1tlLlfuKu8NB1lnKb1bZTFciJa5A2tt"
 GDRIVE_S2_TEST_B_FOLDER_ID = "1_RP6y_NsmN7OVkruQg6X3WrWbVOgjF8H"
 
 # ── MLflow ─────────────────────────────────────────────────────────────────────
-MLFLOW_TRACKING_URI        = "https://mlflow-geoai.stelarea.com"
+MLFLOW_TRACKING_URI        = "https://mlflow.stelarlab.co"
 MLFLOW_EXPERIMENT_PIPELINE = "cropmap_pipeline_runs"
 MLFLOW_EXPERIMENT_DATASET  = "cropmap_data_processing"
 MLFLOW_EXPERIMENT_FEATURE  = "cropmap_feature_selection_s2"
