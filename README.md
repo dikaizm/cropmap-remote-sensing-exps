@@ -2,12 +2,10 @@
 
 Crop-type mapping from multi-temporal Sentinel-2 imagery and USDA Cropland Data Layer (CDL) labels. Covers band selection (GSI / Random Forest) and segmentation model training (DeepLabV3+CBAM, SegFormer).
 
-Study area: Sacramento Valley, California.
-Labels: 8 crop classes + background (Corn, Rice, Winter Wheat, Alfalfa, Tomatoes, Grapes, Almonds, Walnuts), following a CalCROP21-style rule from v6.1 - keep every CDL class with at least 1,000,000 pixels at 10m in the study area.
-Reference year: 2024, native 10m USDA CDL, single-year with a spatial train/val/test split.
-Sentinel-2 export (Google Earth Engine): https://code.earthengine.google.com/e72e58588b73b3f2a06a72ea19af1040
-
-There's no `run.sh` or `Makefile` here. The pipeline runs directly via `python pipeline.py`, or by calling individual `stages/**/*.py` scripts.
+- Study area: Sacramento Valley, California.
+- Labels: 8 crop classes + background (Corn, Rice, Winter Wheat, Alfalfa, Tomatoes, Grapes, Almonds, Walnuts), following a CalCROP21-style rule from v6.1 - keep every CDL class with at least 1,000,000 pixels at 10m in the study area.
+- Reference year: 2024, native 10m USDA CDL, single-year with a spatial train/val/test split.
+- Sentinel-2 export (Google Earth Engine): https://code.earthengine.google.com/e72e58588b73b3f2a06a72ea19af1040
 
 ## Requirements
 
