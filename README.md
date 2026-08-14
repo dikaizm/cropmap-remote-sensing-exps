@@ -2,65 +2,58 @@
 
 Crop-type mapping from multi-temporal Sentinel-2 imagery and USDA Cropland Data Layer (CDL) labels. Covers band selection (GSI / Random Forest) and segmentation model training (DeepLabV3+CBAM, SegFormer).
 
-**Study area:** Sacramento Valley, California
-**Labels:** 8 crop classes + background — Corn, Rice, Winter Wheat, Alfalfa, Tomatoes, Grapes, Almonds, Walnuts (v6.1 CalCROP21-style selection: every CDL class with ≥1,000,000 pixels at 10 m in the study area)
-**Reference year:** 2024 (native 10 m USDA CDL; single-year, spatially-split train/val/test)
+Study area: Sacramento Valley, California.
+Labels: 8 crop classes + background (Corn, Rice, Winter Wheat, Alfalfa, Tomatoes, Grapes, Almonds, Walnuts), following a CalCROP21-style rule from v6.1 - keep every CDL class with at least 1,000,000 pixels at 10m in the study area.
+Reference year: 2024, native 10m USDA CDL, single-year with a spatial train/val/test split.
+Sentinel-2 export (Google Earth Engine): https://code.earthengine.google.com/e72e58588b73b3f2a06a72ea19af1040
 
----
-
-There is no `run.sh` or `Makefile` in this repo — the pipeline is driven directly via `python pipeline.py` or by running individual `stages/**/*.py` scripts.
-
----
+There's no `run.sh` or `Makefile` here. The pipeline runs directly via `python pipeline.py`, or by calling individual `stages/**/*.py` scripts.
 
 ## Requirements
 
 - Python 3.11
-- CUDA-capable GPU recommended for band selection (RF) and training (tested with CUDA 12.4 wheels; MPS supported on Apple Silicon with a compatibility workaround in `models/segformer.py`)
-- [`geoai`](https://github.com/opengeos/geoai) — auto-discovered as a sibling checkout (`../geoai`, matching the superproject's git-submodule layout) or via the `GEOAI_PATH` env var. No manual `PYTHONPATH` export needed — `config.py` adds it to `sys.path` on import.
-
----
+- A CUDA GPU is recommended for band selection (RF) and training (tested on CUDA 12.4 wheels). MPS works on Apple Silicon, with a compatibility workaround in `models/segformer.py`.
+- [`geoai`](https://github.com/opengeos/geoai), auto-discovered as a sibling checkout (`../geoai`, matching the superproject's git-submodule layout) or via `GEOAI_PATH`. No manual `PYTHONPATH` needed - `config.py` adds it to `sys.path` on import.
 
 ## Setup
 
-### 1. Create an environment
+**1. Create an environment**
 
-**Conda (recommended for local/CPU dev):**
+Conda (recommended for local/CPU dev):
 ```bash
 conda env create -f environment.yml
 conda activate cropmap
 ```
 
-**Pip (matches the pinned GPU training environment):**
+Pip (matches the pinned GPU training environment):
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Make `geoai` available
+**2. Make `geoai` available**
 
 ```bash
 git clone https://github.com/opengeos/geoai.git ../geoai
 # or: export GEOAI_PATH=/path/to/geoai
 ```
 
-### 3. Configure environment variables
+**3. Configure environment variables**
 
 ```bash
 cp .env.example .env
 ```
 
-`RUNPOD_API_KEY` is only needed for the `--shutdown` flag (stops the RunPod pod via its GraphQL API 8 minutes after the pipeline finishes; `RUNPOD_POD_ID` is set automatically by RunPod). Without RunPod env vars, `--shutdown` falls back to `sudo shutdown -h +8`.
+`RUNPOD_API_KEY` is only needed for `--shutdown`, which stops the RunPod pod via its GraphQL API 8 minutes after the pipeline finishes (`RUNPOD_POD_ID` is set automatically by RunPod). Without RunPod env vars, `--shutdown` falls back to `sudo shutdown -h +8`.
 
-### 4. Configure `config.py`
+**4. Configure `config.py`**
 
 Fill in the Google Drive folder/file IDs (`GDRIVE_PROCESSED_S2_FOLDER_IDS`, `GDRIVE_PROCESSED_CDL_FOLDER_ID_V6`, `GDRIVE_MODELS_FOLDER_ID`, etc.) and set `MLFLOW_TRACKING_URI`. GDrive uploads use OAuth (`GDRIVE_OAUTH_TOKEN`, generated via `--auth` on `fetch_data.py` / `process_data.py`), not a service account.
 
----
+## CDL classes
 
-## CDL Classes
-
-| CDL ID | Class | ~Pixels (10 m, study area) |
+| CDL ID | Class | ~Pixels (10m, study area) |
 |---|---|---|
 | 3 | Rice | 6.18M |
 | 75 | Almonds | 4.62M |
@@ -71,13 +64,11 @@ Fill in the Google Drive folder/file IDs (`GDRIVE_PROCESSED_S2_FOLDER_IDS`, `GDR
 | 1 | Corn | 1.48M |
 | 36 | Alfalfa | 1.06M |
 
-Any class below the ~1M-pixel threshold (Pistachios, Prunes, Sunflower, Safflower, Fallow/Idle, …) is remapped to background (class 0). `NUM_CLASSES = 9` (0=background, 1–8=crops).
+Anything below the ~1M-pixel threshold (Pistachios, Prunes, Sunflower, Safflower, Fallow/Idle, etc.) gets remapped to background (class 0). `NUM_CLASSES = 9` (0 = background, 1-8 = crops).
 
----
+## Running the pipeline
 
-## Running the Pipeline
-
-### `pipeline.py` — orchestrator
+### `pipeline.py` - orchestrator
 
 ```bash
 python pipeline.py --stages all                     # fetch + feature + train
@@ -90,9 +81,9 @@ python pipeline.py --data-dir /mnt/data              # override data/processed r
 python pipeline.py --stages train --shutdown         # stop the server after finishing
 ```
 
-Logs go to `logs/pipeline_YYYYMMDD_HHMMSS.log` and are uploaded to MLflow (`cropmap_pipeline_runs`) along with per-stage timing.
+Logs go to `logs/pipeline_YYYYMMDD_HHMMSS.log` and get uploaded to MLflow (`cropmap_pipeline_runs`) along with per-stage timing.
 
-### Stage 0 — Fetch / Process (`stages/data/`)
+### Stage 0 - fetch / process (`stages/data/`)
 
 ```bash
 # Download GEE-exported per-date S2 tifs from Google Drive
@@ -106,29 +97,29 @@ python stages/data/process_data.py --years 2024 --skip-upload --skip-delete
 python stages/data/process_data.py --cdl-only --conf-threshold 55
 ```
 
-S2 tifs are uploaded unmodified (no NoData assignment or merging — GEE already exports one clean file per date). CDL handling differs by year: 2022/2023 reproject the 30 m CDL and apply a 3×3 majority filter to smooth resampling artifacts; 2024+ uses USDA's native 10 m CDL (no majority filter). Both years apply the NASS confidence-layer mask (default threshold 55, per Maleki et al. 2024) before filtering to `KEEP_CLASSES`.
+S2 tifs are uploaded unmodified - no NoData assignment or merging, since GEE already exports one clean file per date. CDL handling differs by year: 2022/2023 reproject the 30m CDL and apply a 3x3 majority filter to smooth resampling artifacts, while 2024+ uses USDA's native 10m CDL with no majority filter. Both years apply the NASS confidence-layer mask (default threshold 55, per Maleki et al. 2024) before filtering to `KEEP_CLASSES`.
 
-### Stage 1 — Band Selection (`stages/selection/`)
+### Stage 1 - band selection (`stages/selection/`)
 
-Single-stage, threshold-based selection — no CNN oracle or forward-selection loop.
+Single-stage, threshold-based selection, no CNN oracle or forward-selection loop.
 
 ```bash
 python stages/selection/band_scoring.py --selector gsi_direct --score-threshold 0.5
 python stages/selection/band_scoring.py --selector rf_direct  --score-threshold 0.5
 ```
 
-- **GSI-direct** (`gsi_selection.py`) — per-crop Global Separability Index (Li et al. 2023) computed per (date × band) channel; top-K union across crops (`TOP_K_PER_CROP=20`).
-- **RF-direct** (`feature_importance_selection.py`) — one multi-class Random Forest (`RF_N_ESTIMATORS=500`), per-crop importance via class-conditional Gini-decrease decomposition (Wei et al. 2023 / Asam et al. 2022).
+- **GSI-direct** (`gsi_selection.py`): per-crop Global Separability Index (Li et al. 2023) computed per (date x band) channel, top-K union across crops (`TOP_K_PER_CROP=20`).
+- **RF-direct** (`feature_importance_selection.py`): one multi-class Random Forest (`RF_N_ESTIMATORS=500`), per-crop importance via class-conditional Gini-decrease decomposition (Wei et al. 2023 / Asam et al. 2022).
 
-Outputs: `data/processed/select_gsi_direct_s{threshold}.json` / `select_rf_direct_s{threshold}.json` (+ matching `_bands.txt`).
+Outputs: `data/processed/select_gsi_direct_s{threshold}.json` / `select_rf_direct_s{threshold}.json`, plus matching `_bands.txt`.
 
-### Stage 2 — Training (`stages/training/train_segmentation.py`)
+### Stage 2 - training (`stages/training/train_segmentation.py`)
 
 Five experiment configurations, each trainable on either architecture:
 
 | Experiment | Dates | Band selection | Purpose |
 |---|---|---|---|
-| `single_date` | peak NDVI | none (all bands) | Baseline — isolates temporal signal |
+| `single_date` | peak NDVI | none (all bands) | Baseline, isolates temporal signal |
 | `mt_ndvi` | 4 calendar dates | none | Multi-temporal baseline, no selection |
 | `gsi` | GSI-selected | GSI | GSI spectral-temporal selection |
 | `rf` | RF-selected | RF | RF spectral-temporal selection |
@@ -137,7 +128,7 @@ Five experiment configurations, each trainable on either architecture:
 Architectures: `deeplabv3plus_cbam` (ResNet-50 + CBAM, SGD) and `segformer` (mit_b2, AdamW).
 
 ```bash
-python stages/training/train_segmentation.py                          # all experiments × both archs
+python stages/training/train_segmentation.py                          # all experiments x both archs
 python stages/training/train_segmentation.py --exp single_date
 python stages/training/train_segmentation.py --exp gsi --arch segformer
 python stages/training/train_segmentation.py --loss dynamic_balanced  # thesis primary loss (DECB-CE)
@@ -148,15 +139,15 @@ python stages/training/train_segmentation.py --build-cache-only       # preload 
 python stages/training/train_segmentation.py --force
 ```
 
-Other notable flags: `--loss {wce,focal_tversky,dynamic_balanced}`, `--norm {percentile,minmax,zscore}`, `--no-aug`, `--no-preload`, `--use-cloud-preload` / `--upload-cache-gdrive`, `--eval-only <ckpt>`, `--batch-size`, `--epochs`, `--data-dir`, `--shutdown`.
+Other flags worth knowing: `--loss {wce,focal_tversky,dynamic_balanced}`, `--norm {percentile,minmax,zscore}`, `--no-aug`, `--no-preload`, `--use-cloud-preload` / `--upload-cache-gdrive`, `--eval-only <ckpt>`, `--batch-size`, `--epochs`, `--data-dir`, `--shutdown`.
 
-**Split:** spatial block split within 2024 (`BLOCK_SIZE=1024` px = 4×4 patches), 70/15/15 train/val/test, class-balanced greedy stratification with a per-class pixel-floor repair pass (`stages/data/spatial_split.py`) — prevents patch-adjacency leakage between splits.
+Split: spatial block split within 2024 (`BLOCK_SIZE=1024` px = 4x4 patches), 70/15/15 train/val/test, class-balanced greedy stratification with a per-class pixel-floor repair pass (`stages/data/spatial_split.py`). This is what prevents patch-adjacency leakage between splits.
 
-**Outputs per run** (`ml_models/`, logged to MLflow experiment `cropmap_segmentation_s2*`): best/last checkpoints, `training_history.csv`, training curve, per-class IoU, confusion matrix, segmentation map visualizations.
+Outputs per run (`ml_models/`, logged to MLflow experiment `cropmap_segmentation_s2*`): best/last checkpoints, `training_history.csv`, training curve, per-class IoU, confusion matrix, segmentation map visualizations.
 
-### Inference / Evaluation (`stages/infer/`)
+### Inference / evaluation (`stages/infer/`)
 
-Tiled inference and evaluation over held-out spatial test blocks — backs `notebooks/06_inference_test.ipynb`. `model_io.py` loads a checkpoint and runs tiled inference on one block; `metrics.py` aggregates per-block and full-test-set IoU/F1; `viz.py` plots RGB/GT/prediction/per-crop-IoU panels.
+Tiled inference and evaluation over held-out spatial test blocks, backing `notebooks/06_inference_test.ipynb`. `model_io.py` loads a checkpoint and runs tiled inference on one block; `metrics.py` aggregates per-block and full-test-set IoU/F1; `viz.py` plots RGB/GT/prediction/per-crop-IoU panels.
 
 ### Tools (`stages/tools/`)
 
@@ -168,24 +159,20 @@ python stages/tools/upload_models.py --experiment cropmap_segmentation_s2_v2 --d
 python stages/tools/collect_seed_grid_metrics.py
 ```
 
----
-
 ## Notebooks
 
-Numbered in intended reading order, but not all are live:
+Numbered in intended reading order, but not all of them are live:
 
-1. **`01_fetch_data.ipynb`** — unused placeholder, no code.
-2. **`02_image_processing.ipynb`** — exploratory CDL reprojection/filtering; a manual prototype of what `stages/data/process_data.py` now does, not a call into it.
-3. **`03_data_exploration.ipynb`** — regenerates the thesis "Eksplorasi Data" figures (CDL class distribution, S2 coverage/RGB/NDVI/spectral profiles, band correlation). Self-contained.
-4. **`04_feature_selection_scenarios.ipynb`** — compares the four channel-selection scenarios (`single_date`, `mt_ndvi`, `gsi`, `rf`). Reimplements the GSI/RF scoring math inline for visibility, but imports `save_selection` / `get_train_year_inputs` from `stages/selection/` for real.
-5. **`05_segmentation_training.ipynb`** — trains both architectures across all four scenarios; genuinely imports `stages/training/` internals (`experiment_plan`, `losses`, `normalization`, `spatial_split`) rather than duplicating them.
-6. **`06_inference_test.ipynb`** — loads a held-out spatial test block, runs tiled inference with both architectures, and evaluates across all test blocks; directly uses `stages/infer/`.
+1. `01_fetch_data.ipynb` - unused placeholder, no code.
+2. `02_image_processing.ipynb` - exploratory CDL reprojection/filtering, a manual prototype of what `stages/data/process_data.py` now does rather than a call into it.
+3. `03_data_exploration.ipynb` - regenerates the thesis "Eksplorasi Data" figures (CDL class distribution, S2 coverage/RGB/NDVI/spectral profiles, band correlation). Self-contained.
+4. `04_feature_selection_scenarios.ipynb` - compares the four channel-selection scenarios (`single_date`, `mt_ndvi`, `gsi`, `rf`). Reimplements the GSI/RF scoring math inline for visibility, but does import `save_selection` / `get_train_year_inputs` from `stages/selection/` for real.
+5. `05_segmentation_training.ipynb` - trains both architectures across all four scenarios; genuinely imports `stages/training/` internals (`experiment_plan`, `losses`, `normalization`, `spatial_split`) instead of duplicating them.
+6. `06_inference_test.ipynb` - loads a held-out spatial test block, runs tiled inference with both architectures, and evaluates across all test blocks, using `stages/infer/` directly.
 
-Notebooks 04–06 import repo modules via a runtime `sys.modules["cropmap_pipeline"]` shim pointed at this repo root — there is no actual `cropmap_pipeline/` package directory on disk.
+Notebooks 04-06 import repo modules via a runtime `sys.modules["cropmap_pipeline"]` shim pointed at this repo root - there's no actual `cropmap_pipeline/` package directory on disk.
 
----
-
-## Key Hyperparameters
+## Hyperparameters
 
 All defined in `config.py`.
 
@@ -205,12 +192,12 @@ All defined in `config.py`.
 | `SEED` | 42 | training | Default random seed |
 | `TRAIN_YEARS` / `TEST_YEAR` | ["2024"] / "2024" | training | Single-year, spatially-split |
 
----
-
 ## MLflow
 
-Default tracking URI: `MLFLOW_TRACKING_URI` in `config.py`. Key experiments:
+Tracking URI is set via `MLFLOW_TRACKING_URI` in `config.py`. Dashboard: https://mlflow.stelarlab.co/#/experiments/16/runs
 
-- `cropmap_pipeline_runs` — pipeline log uploads
-- `cropmap_feature_selection_s2` — GSI/RF selection runs
-- `cropmap_segmentation_s2*` — training runs (several versioned variants exist from earlier pipeline iterations; `_v6_same_area` / `_v6.1_same_area` are current)
+Experiments:
+
+- `cropmap_pipeline_runs` - pipeline log uploads
+- `cropmap_feature_selection_s2` - GSI/RF selection runs
+- `cropmap_segmentation_s2*` - training runs (several versioned variants exist from earlier pipeline iterations; `_v6_same_area` / `_v6.1_same_area` are current)
