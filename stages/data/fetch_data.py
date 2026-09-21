@@ -10,8 +10,8 @@ Files are sorted into year subdirectories:
     {output_dir}/2024/S2H_2024_*.tif
 
 Usage:
-    python fetch_data.py --folder-id FOLDER_ID
-    python fetch_data.py --folder-id FOLDER_ID --years 2022
+    python fetch_data.py --folder-id FOLDER_ID --output-dir processed/s2_2024   # → data/processed/s2_2024/
+    python fetch_data.py --folder-id FOLDER_ID --output-dir raw/s2_2022 --years 2022
     python fetch_data.py --folder-id FOLDER_ID --years 2022 --overwrite
     python fetch_data.py --folder-id FOLDER_ID --list-files
     python fetch_data.py --auth
@@ -37,6 +37,12 @@ ALL_YEARS = ["2022", "2023", "2024"]
 
 # S2H_{year}_{YYYY_MM_DD}.tif  (raw) or S2H_{year}_{YYYY_MM_DD}_processed.tif
 _FILE_RE = re.compile(r"^S2H_(\d{4})_(\d{4}_\d{2}_\d{2})(_processed)?\.tif$")
+
+
+def parse_folder_id(value: str) -> str:
+    """Accept a bare folder ID or a GDrive URL (…/folders/ID?…, …?id=ID)."""
+    m = re.search(r"/folders/([\w-]+)|[?&]id=([\w-]+)", value)
+    return (m.group(1) or m.group(2)) if m else value.strip()
 
 
 # ── Auth ────────────────────────────────────────────────────────────────────────
@@ -167,6 +173,7 @@ def _download_one(fname: str, file_id: str, output_dir: str,
     """Download one file into {output_dir}/{year}/ (or flat {output_dir}/). Returns (path, status)."""
     from googleapiclient.http import MediaIoBaseDownload
 
+    yr = ""
     if flat:
         dest_dir = Path(output_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
@@ -181,7 +188,7 @@ def _download_one(fname: str, file_id: str, output_dir: str,
         out_path = yr_dir / fname
 
     if not overwrite and out_path.exists() and out_path.stat().st_size > 0:
-        log.info("  Skip (exists): %s/%s", yr, fname)
+        log.info("  Skip (exists): %s", out_path)
         return str(out_path), "skip"
 
     service = _get_thread_service()
@@ -455,7 +462,13 @@ def download_date_keys(folder_id: str, output_dir: str,
 
 # ── Verify ──────────────────────────────────────────────────────────────────────
 
-def verify(output_dir: str, years: list = None) -> bool:
+def verify(output_dir: str, years: list = None, flat: bool = False) -> bool:
+    if flat:
+        files = sorted(f for f in Path(output_dir).glob("S2H_*.tif") if _FILE_RE.match(f.name))
+        print(f"\nS2 files in {output_dir}: {len(files)}")
+        for f in files:
+            print(f"    {f.name}  ({f.stat().st_size / 1e6:.0f} MB)")
+        return bool(files)
     years  = years or ALL_YEARS
     all_ok = True
     print(f"\nS2 files under {output_dir}/{{year}}/:")
@@ -493,9 +506,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Download single-file-per-date S2 exports from GDrive."
     )
-    parser.add_argument("--folder-id", default=None)
-    parser.add_argument("--output-dir", default=None)
+    parser.add_argument("--folder-id", default=None, type=parse_folder_id,
+                        help="GDrive folder ID or full folder URL")
+    parser.add_argument("--output-dir", default=None,
+                        help="Where to save. Relative paths resolve under data/ (e.g. 'processed/s2_2024'); "
+                             "absolute paths used as-is.")
     parser.add_argument("--years", nargs="+", default=None, choices=ALL_YEARS)
+    parser.add_argument("--by-year", action="store_true",
+                        help="With --folder-id: sort into {output_dir}/{year}/ instead of flat")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--verify-only", action="store_true")
     parser.add_argument("--list-files", action="store_true")
@@ -530,38 +548,53 @@ if __name__ == "__main__":
         GDRIVE_PROCESSED_CDL_FOLDER_ID_V6,
     )
 
+    data_dir = _ROOT / "data"
+    custom   = Path(args.output_dir) if args.output_dir else None
+    if custom and not custom.is_absolute():
+        custom = data_dir / custom
+
     if args.raw:
-        output_dir    = args.output_dir or str(_ROOT / "data" / "raw")
-        s2_output_dir = str(Path(output_dir) / "s2")
-        folder_ids    = GDRIVE_RAW_S2_V5_FOLDER_IDS
+        output_dir = str(custom or data_dir / "raw")
+        folder_ids = GDRIVE_RAW_S2_V5_FOLDER_IDS
     else:
-        output_dir    = args.output_dir or str(_ROOT / "data" / "processed")
-        s2_output_dir = str(Path(output_dir) / "s2")
-        folder_ids    = GDRIVE_PROCESSED_S2_V6_FOLDER_IDS  # v6.1 processed S2 (2024)
+        output_dir = str(custom or data_dir / "processed")
+        folder_ids = GDRIVE_PROCESSED_S2_V6_FOLDER_IDS  # v6.1 processed S2 (2024)
+
+    # --folder-id: single-year folder, files go exactly into --output-dir (flat by default).
+    # Otherwise legacy layout: {output_dir}/s2/{year}/.
+    flat_mode     = bool(args.folder_id) and not args.by_year
+    s2_output_dir = output_dir if args.folder_id else str(Path(output_dir) / "s2")
 
     years = args.years or ALL_YEARS
 
     if args.verify_only:
-        ok = verify(s2_output_dir, years=years)
+        ok = verify(s2_output_dir, years=years, flat=flat_mode)
         sys.exit(0 if ok else 1)
 
-    # S2 — download each year from its own folder → {s2_output_dir}/{year}/
-    for yr in ([] if args.cdl_only else years):
-        fid = args.folder_id or folder_ids.get(yr)
-        if not fid:
-            log.warning("  No folder ID for year %s — skipping", yr)
-            continue
-        log.info("  Fetching S2 year=%s from folder %s", yr, fid)
-        name_to_id = list_folder(fid, years=[yr])
+    # S2
+    if args.folder_id and not args.cdl_only:
+        log.info("  Fetching S2 from folder %s → %s", args.folder_id, s2_output_dir)
+        name_to_id = list_folder(args.folder_id, years=args.years)
         if args.list_files:
             for name in sorted(name_to_id):
                 print(f"  {name}")
-            continue
-        _download_many(name_to_id, s2_output_dir,
-                       overwrite=args.overwrite, workers=args.workers)
-
-    if args.raw:
-        globals()["_FILE_RE"] = _orig_file_re
+        else:
+            _download_many(name_to_id, s2_output_dir, overwrite=args.overwrite,
+                           workers=args.workers, flat=flat_mode)
+    else:
+        for yr in ([] if args.cdl_only else years):
+            fid = folder_ids.get(yr)
+            if not fid:
+                log.warning("  No folder ID for year %s — skipping", yr)
+                continue
+            log.info("  Fetching S2 year=%s from folder %s", yr, fid)
+            name_to_id = list_folder(fid, years=[yr])
+            if args.list_files:
+                for name in sorted(name_to_id):
+                    print(f"  {name}")
+                continue
+            _download_many(name_to_id, s2_output_dir,
+                           overwrite=args.overwrite, workers=args.workers)
 
     if args.list_files:
         sys.exit(0)
@@ -616,4 +649,4 @@ if __name__ == "__main__":
             log.warning("  No CDL files found in folder %s", cdl_fid)
 
     if not args.cdl_only:
-        verify(s2_output_dir, years=years)
+        verify(s2_output_dir, years=years, flat=flat_mode)
