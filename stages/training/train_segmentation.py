@@ -48,6 +48,9 @@ from mlflow.tracking import MlflowClient
 _ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
 sys.path.insert(0, str(_ROOT))
 
+from dotenv import load_dotenv
+load_dotenv(_ROOT / ".env")
+
 from config import (
     S2_MIN_VALID_FRAC, MLFLOW_TRACKING_URI,
     TRAIN_YEARS, TEST_YEAR, VAL_FRAC, TEST_FRAC,
