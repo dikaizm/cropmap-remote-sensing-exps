@@ -169,6 +169,7 @@ MLFLOW_EXPERIMENT_TRAIN_SAME_AREA    = "cropmap_segmentation_s2_same_area"
 MLFLOW_EXPERIMENT_TRAIN_V6_SPATIAL   = "cropmap_segmentation_s2_v6_spatial"
 MLFLOW_EXPERIMENT_TRAIN_V6_SAME_AREA = "cropmap_segmentation_s2_v6_same_area"
 MLFLOW_EXPERIMENT_TRAIN_V6_1_SAME_AREA = "cropmap_segmentation_s2_v6.1_same_area"
+MLFLOW_EXPERIMENT_TRAIN_V6_1_2025      = "cropmap_segmentation_s2_v6.1_2025"
 
 # ── GSI scoring hyperparameters ───────────────────────────────────────────────
 SAMPLE_FRACTION = 0.20   # 20% of labeled crop pixels for GSI computation

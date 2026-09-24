@@ -23,6 +23,7 @@ from config import (
     MLFLOW_EXPERIMENT_TRAIN_V6_SPATIAL,
     MLFLOW_EXPERIMENT_TRAIN_V6_SAME_AREA,
     MLFLOW_EXPERIMENT_TRAIN_V6_1_SAME_AREA,
+    MLFLOW_EXPERIMENT_TRAIN_V6_1_2025,
 )
 
 
@@ -33,7 +34,7 @@ class ExperimentConfig:
     band_indices:      Any           # list[int] or dict{yr: (list[int], list[str])}
     band_names:        list          # reference-year channel names
     default_loss:      str  = "wce"  # "wce" | "focal_tversky" | "dynamic_balanced"
-    mlflow_experiment: str  = MLFLOW_EXPERIMENT_TRAIN_V6_1_SAME_AREA
+    mlflow_experiment: str  = MLFLOW_EXPERIMENT_TRAIN_V6_1_2025
     extra_kw:          dict = field(default_factory=dict)
 
 
