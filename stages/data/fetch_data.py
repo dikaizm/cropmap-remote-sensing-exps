@@ -199,7 +199,7 @@ def _download_one(fname: str, file_id: str, output_dir: str,
             dl   = MediaIoBaseDownload(fh, request, chunksize=50 * 1024 * 1024)
             done = False
             while not done:
-                status, done = dl.next_chunk()
+                status, done = dl.next_chunk(num_retries=5)
                 if status:
                     log.info("  %s: %d%%", fname, int(status.progress() * 100))
         tmp.rename(out_path)
@@ -297,7 +297,7 @@ def download_cdl(folder_id: str, output_dir: str,
                 dl   = MediaIoBaseDownload(fh, request, chunksize=50 * 1024 * 1024)
                 done = False
                 while not done:
-                    status, done = dl.next_chunk()
+                    status, done = dl.next_chunk(num_retries=5)
             tmp.rename(out_path)
             log.info("  Done: cdl/%s  (%.0f MB)", fname, out_path.stat().st_size / 1e6)
             new_count += 1
@@ -360,7 +360,7 @@ def fetch_preload_cache(folder_id: str, output_dir: str,
                 dl   = MediaIoBaseDownload(fh, request, chunksize=50 * 1024 * 1024)
                 done = False
                 while not done:
-                    status, done = dl.next_chunk()
+                    status, done = dl.next_chunk(num_retries=5)
                     if status:
                         log.info("  %s: %d%%", fname, int(status.progress() * 100))
             tmp.rename(out_path)
@@ -424,7 +424,7 @@ def upload_preload_cache(folder_id: str, cache_dir: str,
                 )
             resp = None
             while resp is None:
-                status, resp = req.next_chunk()
+                status, resp = req.next_chunk(num_retries=5)
                 if status:
                     log.info("  %s: %d%%", fname, int(status.progress() * 100))
             log.info("  Done: %s  (%.0f MB)%s", fname, path.stat().st_size / 1e6,
@@ -639,7 +639,7 @@ if __name__ == "__main__":
                         dl = MediaIoBaseDownload(fh, req, chunksize=50*1024*1024)
                         done = False
                         while not done:
-                            _, done = dl.next_chunk()
+                            _, done = dl.next_chunk(num_retries=5)
                     tmp.rename(out_path)
                     log.info("  Done: cdl/%s  (%.0f MB)", fname, out_path.stat().st_size/1e6)
                 except Exception as exc:
