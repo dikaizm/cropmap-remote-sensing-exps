@@ -48,20 +48,29 @@ LOGS_DIR         = _LOGS_DIR
 GSI_CANDIDATES_JSON = _GSI_CANDIDATES_JSON
 
 
-def configure_data_dir(data_dir: str | None) -> None:
+def configure_data_dir(data_dir: str | None, s2_dir: str | None = None) -> None:
+    """data_dir overrides the processed root (s2/ + cdl/ both move).
+    s2_dir independently overrides just the S2 source dir (e.g. an external raw
+    drive) — CDL still resolved from data_dir/config defaults."""
     global S2_TRAIN_DIR, S2_PROCESSED_DIR, CDL_TRAIN, CDL_BY_YEAR, PROCESSED_DIR, FIGURES_DIR, GSI_CANDIDATES_JSON
 
-    if not data_dir:
-        return
+    yr = TRAIN_YEARS[0]
 
-    processed = pathlib.Path(data_dir)
-    PROCESSED_DIR    = processed
-    S2_TRAIN_DIR     = processed / "s2" / "2024"
-    S2_PROCESSED_DIR = S2_TRAIN_DIR
-    CDL_TRAIN        = processed / "cdl" / "cdl_2024_study_area_filtered.tif"
-    CDL_BY_YEAR      = {"2024": CDL_TRAIN}
-    GSI_CANDIDATES_JSON = processed / "s2" / "2024" / "gsi_candidates.json"
-    log.info(f"Data dir overridden to {processed}")
+    if data_dir:
+        processed = pathlib.Path(data_dir)
+        PROCESSED_DIR    = processed
+        S2_TRAIN_DIR     = processed / "s2" / yr
+        S2_PROCESSED_DIR = S2_TRAIN_DIR
+        CDL_TRAIN        = processed / "cdl" / f"cdl_{yr}_study_area_filtered.tif"
+        CDL_BY_YEAR      = {yr: CDL_TRAIN}
+        GSI_CANDIDATES_JSON = processed / "s2" / yr / "gsi_candidates.json"
+        log.info(f"Data dir overridden to {processed}")
+
+    if s2_dir:
+        S2_TRAIN_DIR     = pathlib.Path(s2_dir)
+        S2_PROCESSED_DIR = S2_TRAIN_DIR
+        GSI_CANDIDATES_JSON = S2_TRAIN_DIR / "gsi_candidates.json"
+        log.info(f"S2 dir overridden to {S2_TRAIN_DIR}")
 
 
 def _glob_s2_train() -> list[str]:
@@ -75,13 +84,15 @@ def _glob_s2_train() -> list[str]:
     return valid
 
 
-def get_train_year_inputs(data_dir: str | None = None) -> tuple[str, list[str], str]:
+def get_train_year_inputs(data_dir: str | None = None, s2_dir: str | None = None) -> tuple[str, list[str], str]:
     """Training data from flat train/ dir.
 
     data_dir: optional processed-data root override (expects s2/2024 + cdl/). When
     given, reconfigures the module paths before globbing; None keeps config defaults.
+    s2_dir: optional independent override for the S2 source dir only (e.g. an
+    external raw drive) — CDL still resolved from data_dir/config defaults.
     """
-    configure_data_dir(data_dir)
+    configure_data_dir(data_dir, s2_dir=s2_dir)
     s2_files = _glob_s2_train()
     assert s2_files, f"No S2 files in {S2_TRAIN_DIR}"
     cdl_path = str(CDL_TRAIN)
@@ -89,13 +100,15 @@ def get_train_year_inputs(data_dir: str | None = None) -> tuple[str, list[str], 
     return TRAIN_YEARS[0], s2_files, cdl_path
 
 
-def get_stage1_inputs(data_dir: str | None = None) -> list[tuple[str, list[str], str]]:
+def get_stage1_inputs(data_dir: str | None = None, s2_dir: str | None = None) -> list[tuple[str, list[str], str]]:
     """Training data for GSI band scoring — flat train/ dir.
     Returns [(year, s2_files, cdl_path)].
 
     data_dir: optional processed-data root override (s2/2024 + cdl/); None keeps defaults.
+    s2_dir: optional independent override for the S2 source dir only (e.g. an
+    external raw drive) — CDL still resolved from data_dir/config defaults.
     """
-    configure_data_dir(data_dir)
+    configure_data_dir(data_dir, s2_dir=s2_dir)
     s2_files = _glob_s2_train()
     cdl_path = str(CDL_TRAIN)
     if not s2_files:

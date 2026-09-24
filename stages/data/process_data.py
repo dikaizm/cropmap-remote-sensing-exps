@@ -68,7 +68,7 @@ from utils.label import (
 
 log = logging.getLogger(__name__)
 
-ALL_YEARS = ["2022", "2023", "2024"]
+ALL_YEARS = ["2022", "2023", "2024", "2025"]
 
 _FILE_RE = re.compile(r"^(S2H_\d{4}_\d{4}_\d{2}_\d{2})\.tif$")
 
@@ -589,8 +589,16 @@ def main(
                 existing = sorted(S2_PROCESSED_DIR.glob(f"S2H_{yr}_*.tif"))
             if not existing:
                 existing = sorted(S2_PROCESSED_DIR.glob(f"*{yr}*.tif"))
+            if not existing and raw_s2_dir:
+                # No processed/uploaded S2 yet — fall back to a raw S2 tif as grid
+                # ref (v6 exports are uploaded as-is, so raw and processed share
+                # the same grid; no need to run the S2 pipeline just for a ref).
+                # pathlib.glob (unlike glob.glob) doesn't skip dotfiles — filter
+                # out macOS AppleDouble junk (._*.tif) explicitly.
+                existing = sorted(p for p in (pathlib.Path(raw_s2_dir) / yr).glob("*.tif")
+                                   if not p.name.startswith("."))
             if not existing:
-                log.error("  --cdl-only: no S2 tif for year %s under %s — cannot determine grid",
+                log.error("  --cdl-only: no S2 tif for year %s under %s (or raw_s2_dir) — cannot determine grid",
                           yr, S2_PROCESSED_DIR)
                 continue
             s2_ref_path = str(existing[0])

@@ -57,11 +57,11 @@ PRELOAD_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 PRELOAD_RAM_BUDGET_GB = None
 
 # S2 data organised by role, not year
-S2_TRAIN_DIR = PROCESSED_DIR / "s2" / "2024"   # main training area (all dates, flat; v6.1 processed S2)
+S2_TRAIN_DIR = PROCESSED_DIR / "s2" / "2025"   # main training area (all dates, flat; v6.1 processed S2)
 S2_PROCESSED_DIR = S2_TRAIN_DIR                  # backwards-compat alias
 
-CDL_TRAIN  = CDL_DIR / "cdl_2024_study_area_filtered.tif"   # matches process_data.py output naming
-CDL_BY_YEAR = {"2024": CDL_TRAIN}        # legacy lookup used internally
+CDL_TRAIN  = CDL_DIR / "cdl_2025_study_area_filtered.tif"   # matches process_data.py output naming
+CDL_BY_YEAR = {"2025": CDL_TRAIN}        # legacy lookup used internally
 
 # ── S2 metadata ────────────────────────────────────────────────────────────────
 S2_BAND_NAMES    = ["B2", "B3", "B4", "B5", "B6", "B7", "B8", "B8A", "B11", "B12"]   # v6.1: 10 land bands (B1/B9/B10 atmospheric 60m excluded)
@@ -139,6 +139,7 @@ CDL_DOWNLOAD_URLS = {
 # Only available from 2024 onward — used by process_data.py for the test year.
 CDL_DOWNLOAD_URLS_10M = {
     "2024": "https://www.nass.usda.gov/Research_and_Science/Cropland/Release/datasets/2024_10m_cdls.zip",
+    "2025": "https://www.nass.usda.gov/Research_and_Science/Cropland/Release/datasets/2025_10m_cdls.zip",
 }
 GDRIVE_PROCESSED_CDL_FOLDER_ID    = "1limegK5Eu3NpNOKHG9xDPe8RoW1B7qMQ"
 GDRIVE_PROCESSED_CDL_FOLDER_ID_V6 = "1oztNLt4a2YS4CzL5cIahW0rvKZB0GARW"
@@ -174,8 +175,8 @@ SAMPLE_FRACTION = 0.20   # 20% of labeled crop pixels for GSI computation
 TOP_K_PER_CROP  = 20     # top-K channels per crop before union
 
 # ── Training hyperparameters ───────────────────────────────────────────────────
-TRAIN_YEARS    = ["2024"]
-TEST_YEAR      = "2024"
+TRAIN_YEARS    = ["2025"]
+TEST_YEAR      = "2025"
 PATCH_SIZE     = 256
 STRIDE         = 256
 MIN_VALID_FRAC = 0.1

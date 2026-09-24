@@ -8,12 +8,16 @@ Band-level GSI is averaged across all training years for robustness.
 """
 
 import logging
+import sys
 import time
 from datetime import datetime as _dt
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+_ROOT = next(_p for _p in Path(__file__).resolve().parents if (_p / "config.py").exists())
+sys.path.insert(0, str(_ROOT))
 
 from config import (
     KEEP_CLASSES, CDL_CLASS_NAMES, S2_BAND_NAMES,
@@ -218,3 +222,30 @@ def run_gsi_direct(
     )
 
     return union
+
+
+if __name__ == "__main__":
+    import argparse
+    from stages.selection.band_scoring import configure_data_dir, get_stage1_inputs
+    from config import PROCESSED_DIR
+
+    parser = argparse.ArgumentParser(description="GSI-direct band selection")
+    parser.add_argument("--data-dir", default=None, help="Override data/processed directory")
+    parser.add_argument("--s2-dir", default=None, help="Override S2 source dir only (e.g. external raw drive); CDL stays at data-dir/config default")
+    parser.add_argument("--score-threshold", type=float, default=0.5, metavar="T")
+    parser.add_argument("--out-stem", default=None)
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    from dotenv import load_dotenv
+    load_dotenv(_ROOT / ".env")
+
+    years_data = get_stage1_inputs(args.data_dir, s2_dir=args.s2_dir)
+    out_stem   = args.out_stem or f"select_gsi_direct_s{args.score_threshold:g}"
+    run_gsi_direct(
+        years_data,
+        data_dir=args.data_dir or str(PROCESSED_DIR),
+        out_stem=out_stem,
+        score_threshold=args.score_threshold,
+    )
